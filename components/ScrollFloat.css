@@ -1,0 +1,13 @@
+.scroll-float {
+  display: block;
+  position: relative;
+}
+
+.scroll-float-text {
+  display: inline-block;
+}
+
+.char {
+  display: inline-block;
+  white-space: pre;
+}

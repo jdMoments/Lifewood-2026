@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lifewood AI Solutions</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/leaflet.fullscreen.css" />
+    <style>
+      /* Custom Keyframes from original project */
+      @keyframes orbFloat     { 0%{transform:translateY(0) scale(1)} 100%{transform:translateY(-70px) scale(1.08)} }
+      @keyframes gridPan      { 0%{transform:translateY(0)} 100%{transform:translateY(60px)} }
+      @keyframes navSlideDown { from{transform:translateY(-100%);opacity:0} to{transform:translateY(0);opacity:1} }
+      @keyframes fadeInUp     { from{opacity:0;transform:translateY(30px)} to{opacity:1;transform:translateY(0)} }
+      @keyframes pulseDot     { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(1.6)} }
+      @keyframes particleRise { 0%{transform:translateY(100vh) scale(0);opacity:0} 10%{opacity:.45} 90%{opacity:.15} 100%{transform:translateY(-100px) scale(1);opacity:0} }
+      @keyframes ringRotate   { from{transform:rotate(0deg) rotateX(70deg)} to{transform:rotate(360deg) rotateX(70deg)} }
+      @keyframes globePulse   { 0%,100%{box-shadow:0 0 50px rgba(29,185,84,.25)} 50%{box-shadow:0 0 90px rgba(29,185,84,.45)} }
+      @keyframes dotPulse     { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.7);opacity:.5} }
+      @keyframes scrollClients{ from{transform:translateX(0)} to{transform:translateX(-50%)} }
+      @keyframes tickerScroll { from{transform:translateX(0)} to{transform:translateX(-50%)} }
+      @keyframes dropdownFadeIn { from{opacity:0;transform:translateY(-10px) scale(0.98)} to{opacity:1;transform:translateY(0) scale(1)} }
+      @keyframes spinSlow { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+      @keyframes glare {
+        0% { transform: translateX(-150%) skewX(-25deg); }
+        100% { transform: translateX(150%) skewX(-25deg); }
+      }
+      @keyframes float {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-20px); }
+      }
+
+      /* Base styles */
+      html { scroll-behavior:smooth; }
+      body { 
+        overflow-x:hidden;
+        background-color: #f3f6f4; /* T.bgBase */
+        color: #1a2e22; /* T.textDark */
+        font-family: 'Manrope', sans-serif;
+      }
+
+      /* Flip Animation Styles */
+      .flip-container {
+        perspective: 1000px;
+      }
+      .flipper {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        transform-style: preserve-3d;
+        transition: transform 0.8s;
+        transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .flipper.is-flipped {
+        transform: rotateY(180deg);
+      }
+      .front-face,
+      .back-face {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        -webkit-backface-visibility: hidden; /* Safari */
+        backface-visibility: hidden;
+      }
+      .back-face {
+        transform: rotateY(180deg);
+      }
+    </style>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Manrope', 'sans-serif'],
+            },
+            colors: {
+              'lw-bg-base': '#f3f6f4',
+              'lw-bg-card': '#eef2ef',
+              'lw-bg-section': '#e8ede9',
+              'lw-bg-dark': '#1a2e22',
+              'lw-green': '#1db954',
+              'lw-green-deep': '#157a38',
+              'lw-text-dark': '#1a2e22',
+              'lw-text-body': '#3d5440',
+              'lw-text-muted': '#7a9480',
+              'lw-border': 'rgba(29,185,84,0.18)',
+              'lw-accordion-beige': '#f8f5f0',
+              'lw-accordion-orange': '#fbc893',
+              'lw-accordion-green': '#0e5a3d',
+              'lw-accordion-black': '#1c1c1c',
+            },
+            animation: {
+              'orb-float': 'orbFloat 14s ease-in-out infinite alternate',
+              'grid-pan': 'gridPan 22s linear infinite',
+              'nav-slide-down': 'navSlideDown .8s ease forwards',
+              'fade-in-up': 'fadeInUp .9s ease forwards',
+              'pulse-dot': 'pulseDot 2s infinite',
+              'particle-rise': 'particleRise 11s linear infinite',
+              'ring-rotate': 'ringRotate 8s linear infinite',
+              'globe-pulse': 'globePulse 4s ease-in-out infinite',
+              'dot-pulse': 'dotPulse 2s ease-in-out infinite',
+              'scroll-clients': 'scrollClients 22s linear infinite',
+              'ticker-scroll': 'tickerScroll 30s linear infinite',
+              'dropdown-fade-in': 'dropdownFadeIn 0.2s ease-out forwards',
+              'spin-slow': 'spinSlow 12s linear infinite',
+            }
+          }
+        }
+      }
+    </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/Leaflet.fullscreen.min.js"></script>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.41.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="dark:bg-[#0a150f] dark:text-white transition-colors duration-300">
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
