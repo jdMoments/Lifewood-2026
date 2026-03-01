@@ -5,8 +5,18 @@ const InternalNews: React.FC = () => {
   const { t } = useTranslation();
 
   return (
-    <div className="relative min-h-screen bg-white pt-40 pb-20 px-8 md:px-20 z-10">
-      <div className="max-w-7xl mx-auto">
+    <div className="relative min-h-screen pt-40 pb-20 px-8 md:px-20 z-10 overflow-hidden">
+      {/* Background Image with Blur */}
+      <div 
+        className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat blur-sm scale-110"
+        style={{ 
+          backgroundImage: 'url(https://media.istockphoto.com/id/1092964832/photo/global-communication-network-concept.webp?a=1&b=1&s=612x612&w=0&k=20&c=RiB_cXiQsT6Sn6sQSCS5btet1uBCsCsEIqVuPjh_Xhw=)' 
+        }}
+      ></div>
+      {/* Overlay to ensure readability */}
+      <div className="absolute inset-0 z-0 bg-white/70"></div>
+
+      <div className="relative max-w-7xl mx-auto z-10">
         <div className="mb-16">
           <div className="flex items-center gap-2 text-lw-green font-bold uppercase tracking-widest text-xs mb-4">
             <span className="w-8 h-[1px] bg-lw-green"></span>

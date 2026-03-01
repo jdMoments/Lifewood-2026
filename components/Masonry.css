@@ -1,0 +1,32 @@
+.masonry-list {
+  position: relative;
+  width: 100%;
+  overflow: visible;
+}
+
+.masonry-item-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 10px;
+  box-sizing: border-box;
+  z-index: 1;
+  transition: z-index 0.3s;
+}
+
+.masonry-item-wrapper:hover {
+  z-index: 10;
+}
+
+.masonry-item-img {
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+  border-radius: 2rem;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+.color-overlay {
+  pointer-events: none;
+}

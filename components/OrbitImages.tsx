@@ -73,7 +73,7 @@ interface OrbitItemProps {
   index: number;
   totalItems: number;
   path: string;
-  itemSize: number;
+  itemSize: number | number[];
   rotation: number;
   progress: MotionValue<number>;
   fill: boolean;
@@ -82,6 +82,11 @@ interface OrbitItemProps {
 
 function OrbitItem({ item, index, totalItems, path, itemSize, rotation, progress, fill }: OrbitItemProps) {
   const itemOffset = fill ? (index / totalItems) * 100 : 0;
+  
+  // Determine size for this specific item
+  const currentItemSize = Array.isArray(itemSize) 
+    ? itemSize[index % itemSize.length] 
+    : itemSize;
 
   const offsetDistance = useTransform(progress, (p) => {
     const offset = (((p + itemOffset) % 100) + 100) % 100;
@@ -92,15 +97,15 @@ function OrbitItem({ item, index, totalItems, path, itemSize, rotation, progress
     <motion.div
       className="orbit-item"
       style={{
-        width: itemSize,
-        height: itemSize,
+        width: currentItemSize,
+        height: currentItemSize,
         offsetPath: `path("${path}")`,
         offsetRotate: '0deg',
         offsetAnchor: 'center center',
         offsetDistance,
       }}
     >
-      <div style={{ transform: `rotate(${-rotation}deg)` }}>{item}</div>
+      <div style={{ transform: `rotate(${-rotation}deg)`, width: '100%', height: '100%' }}>{item}</div>
     </motion.div>
   );
 }
@@ -118,7 +123,7 @@ interface OrbitImagesProps {
   starInnerRatio?: number;
   rotation?: number;
   duration?: number;
-  itemSize?: number;
+  itemSize?: number | number[];
   direction?: 'normal' | 'reverse';
   fill?: boolean;
   width?: number | string;
@@ -131,6 +136,8 @@ interface OrbitImagesProps {
   paused?: boolean;
   centerContent?: React.ReactNode;
   responsive?: boolean;
+  showConcentricCircles?: boolean;
+  concentricCirclesCount?: number;
 }
 
 export default function OrbitImages({
@@ -159,6 +166,8 @@ export default function OrbitImages({
   paused = false,
   centerContent,
   responsive = false,
+  showConcentricCircles = false,
+  concentricCirclesCount = 3,
 }: OrbitImagesProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -239,6 +248,27 @@ export default function OrbitImages({
     />
   ));
 
+  const concentricCircles = useMemo(() => {
+    if (!showConcentricCircles || shape !== 'circle') return null;
+    const circles = [];
+    for (let i = 1; i <= concentricCirclesCount; i++) {
+      const r = (radius / concentricCirclesCount) * i;
+      circles.push(
+        <circle
+          key={i}
+          cx={designCenterX}
+          cy={designCenterY}
+          r={r}
+          fill="none"
+          stroke={pathColor}
+          strokeWidth={pathWidth / scale}
+          opacity={0.5}
+        />
+      );
+    }
+    return circles;
+  }, [showConcentricCircles, concentricCirclesCount, radius, designCenterX, designCenterY, pathColor, pathWidth, scale, shape]);
+
   return (
     <div
       ref={containerRef}
@@ -262,14 +292,15 @@ export default function OrbitImages({
           className="orbit-rotation-wrapper"
           style={{ transform: `rotate(${rotation}deg)` }}
         >
-          {showPath && (
+          {(showPath || showConcentricCircles) && (
             <svg
               width="100%"
               height="100%"
               viewBox={`0 0 ${baseWidth} ${baseWidth}`}
               className="orbit-path-svg"
             >
-              <path d={path} fill="none" stroke={pathColor} strokeWidth={pathWidth / scale} />
+              {showConcentricCircles && concentricCircles}
+              {showPath && <path d={path} fill="none" stroke={pathColor} strokeWidth={pathWidth / scale} />}
             </svg>
           )}
 

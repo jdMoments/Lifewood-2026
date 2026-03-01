@@ -4,7 +4,7 @@ import { gsap } from 'gsap';
 const Tads: React.FC = () => {
   return (
     <section className="min-h-screen bg-white pt-40 pb-20 px-8 md:px-20">
-      <div className="max-w-7xl mx-auto">
+      <div className="mx-auto">
         {/* Decorative Header */}
         <div className="flex items-center gap-4 mb-10">
           <div className="flex items-center">
@@ -16,12 +16,21 @@ const Tads: React.FC = () => {
 
         {/* Main Content Card */}
         <div className="bg-[#f5f2ed] rounded-[3rem] p-12 md:p-20 relative overflow-hidden flex flex-col lg:flex-row items-center justify-between gap-12">
+          <div className="absolute inset-0 z-0">
+            <img 
+              src="https://images.unsplash.com/photo-1556740738-b6a63e27c4df?q=80&w=2070&auto=format&fit=crop"
+              alt="Data Servicing Background"
+              className="w-full h-full object-cover blur-md scale-110"
+              referrerPolicy="no-referrer"
+            />
+            <div className="absolute inset-0 bg-black/30"></div>
+          </div>
           <div className="flex-1 z-10">
-            <h1 className="text-5xl md:text-7xl font-bold text-black mb-10 leading-tight">
+            <h1 className="text-5xl md:text-7xl font-bold text-white mb-10 leading-tight">
               Type A -<br />
               Data Servicing
             </h1>
-            <p className="text-black text-lg md:text-xl max-w-xl leading-relaxed mb-12">
+            <p className="text-white/90 text-lg md:text-xl max-w-xl leading-relaxed mb-12">
               End-to-end data services specializing in multi-language datasets, including document capture, data collection and preparation, extraction, cleaning, labeling, annotation, quality assurance, and formatting.
             </p>
 

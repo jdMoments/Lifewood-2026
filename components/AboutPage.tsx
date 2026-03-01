@@ -8,7 +8,8 @@ const DraggableImage: React.FC<{
   constraintsRef: React.RefObject<HTMLDivElement | null>;
   initialX?: number | string;
   initialY?: number | string;
-}> = ({ src, alt, className, constraintsRef, initialX, initialY }) => {
+  delay?: number;
+}> = ({ src, alt, className, constraintsRef, initialX, initialY, delay = 0 }) => {
   return (
     <motion.div
       drag
@@ -19,14 +20,25 @@ const DraggableImage: React.FC<{
       initial={{ x: initialX, y: initialY }}
       className={`absolute cursor-grab p-5 ${className}`}
     >
-      <div className="rounded-[2.5rem] overflow-hidden shadow-2xl bg-white">
+      <motion.div
+        animate={{
+          y: [0, -20, 0],
+        }}
+        transition={{
+          duration: 4,
+          repeat: Infinity,
+          ease: "easeInOut",
+          delay: delay
+        }}
+        className="rounded-[2.5rem] overflow-hidden shadow-2xl bg-white"
+      >
         <img
           src={src}
           alt={alt}
           className="w-full h-auto object-cover pointer-events-none"
           referrerPolicy="no-referrer"
         />
-      </div>
+      </motion.div>
     </motion.div>
   );
 };
@@ -167,53 +179,55 @@ const AboutPage: React.FC = () => {
             <p className="text-gray-500 uppercase tracking-[0.3em] text-sm font-medium">Be Amazed</p>
           </div>
 
-          <div ref={containerRef} className="relative h-[1600px] max-w-6xl mx-auto">
-            {/* Image 1: Woman */}
+          <div ref={containerRef} className="relative h-[1800px] max-w-6xl mx-auto">
+            {/* Set 1: Staggered Layout 1 */}
             <DraggableImage
               src="https://framerusercontent.com/images/4hASBG5DwObUZ6HSxm1j5gic.jpeg?scale-down-to=1024&width=853&height=1280"
               alt="Heritage"
-              className="top-0 left-0 w-1/3"
+              className="top-0 left-[5%] w-1/3"
               constraintsRef={containerRef}
+              delay={0}
             />
 
-            {/* Image 2: AI Brain */}
             <DraggableImage
-              src="https://framerusercontent.com/images/iCuv1hnq9hAalYZSbiXDKScy31M.jpg?width=2560&height=1707"
+              src="https://framerusercontent.com/images/iCuv1hnq9hAalYZSbiXDKScy31M.jpg?scale-down-to=512&width=2560&height=1707"
               alt="AI Brain"
-              className="top-[400px] left-1/4 w-1/3"
+              className="top-[350px] left-[35%] w-1/3"
               constraintsRef={containerRef}
+              delay={1}
             />
 
-            {/* Image 3: Self-driving car */}
             <DraggableImage
-              src="https://framerusercontent.com/images/VDjJLyomenB1LFHPI6jBfB068.png?width=2268&height=3402"
+              src="https://framerusercontent.com/images/VDjJLyomenB1LFHPI6jBfB068.png?scale-down-to=1024&width=2268&height=3402"
               alt="Self-driving car"
-              className="top-1/4 right-0 w-1/3"
+              className="top-[500px] right-[5%] w-1/3"
               constraintsRef={containerRef}
+              delay={2}
             />
 
-            {/* Image 4: Square Abstract */}
+            {/* Set 2: Staggered Layout 2 */}
             <DraggableImage
-              src="https://framerusercontent.com/images/KNYITojpSxAW0RVdzBr8gV0gxg.jpg?width=3000&height=3000"
+              src="https://framerusercontent.com/images/KNYITojpSxAW0RVdzBr8gV0gxg.jpg?scale-down-to=512&width=3000&height=3000"
               alt="Abstract AI"
-              className="top-[800px] left-0 w-1/3"
+              className="top-[1000px] left-[10%] w-1/4"
               constraintsRef={containerRef}
+              delay={0.5}
             />
 
-            {/* Image 5: Collaboration */}
             <DraggableImage
-              src="https://framerusercontent.com/images/cMKEugcBZTYApEhuh47taqgdc8Q.jpg?width=612&height=422"
+              src="https://framerusercontent.com/images/cMKEugcBZTYApEhuh47taqgdc8Q.jpg?scale-down-to=512&width=612&height=422"
               alt="Collaboration"
-              className="top-[1000px] right-0 w-1/3"
+              className="top-[1000px] right-[10%] w-1/3"
               constraintsRef={containerRef}
+              delay={1.5}
             />
 
-            {/* Image 6: Tech Workspace */}
             <DraggableImage
-              src="https://framerusercontent.com/images/5W3fKf5FwyglyFVBHEXLuqopg.png?width=1536&height=1024"
+              src="https://framerusercontent.com/images/5W3fKf5FwyglyFVBHEXLuqopg.png?scale-down-to=1024&width=1536&height=1024"
               alt="Tech Workspace"
-              className="top-[1200px] left-1/4 w-1/3"
+              className="top-[1350px] left-[25%] w-[45%]"
               constraintsRef={containerRef}
+              delay={2.5}
             />
           </div>
         </div>

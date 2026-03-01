@@ -271,14 +271,21 @@ const AIServicesPage: React.FC = () => {
                   <OrbitImages 
                     images={dataAcquisitionImages}
                     shape="circle"
-                    radius={100}
-                    itemSize={60}
-                    duration={20}
+                    radius={120}
+                    itemSize={[40, 60, 50, 70, 45, 55]}
+                    duration={30}
                     responsive={true}
                     baseWidth={400}
+                    showConcentricCircles={true}
+                    concentricCirclesCount={3}
+                    pathColor="rgba(0,0,0,0.05)"
                     centerContent={
-                      <div className="w-40 h-40 opacity-80">
-                        <FloatingGlobe />
+                      <div className="flex flex-col items-center justify-center">
+                        <img 
+                          src="https://framerusercontent.com/images/BZSiFYgRc4wDUAuEybhJbZsIBQY.png?width=1519&height=429" 
+                          alt="Lifewood Logo" 
+                          className="w-32 h-auto opacity-90" 
+                        />
                       </div>
                     }
                   />

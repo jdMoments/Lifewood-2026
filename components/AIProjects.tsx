@@ -2,10 +2,12 @@ import React from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import ScrollFloat from './ScrollFloat';
 import GlareHover from './GlareHover';
+import Particles from './Particles'; // Import the new Particles component
 
 const AIProjects: React.FC = () => {
   const { t } = useTranslation();
   const [openIndex, setOpenIndex] = React.useState<number | null>(0);
+  const [gradientActive, setGradientActive] = React.useState(false);
 
   const projectImages = [
     "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=2070&auto=format&fit=crop", // 2.1
@@ -18,7 +20,17 @@ const AIProjects: React.FC = () => {
   ];
 
   return (
-    <div className="relative min-h-screen bg-white pt-40 pb-20 px-8 md:px-20 z-10">
+    <div className={`relative min-h-screen pt-40 pb-20 px-8 md:px-20 z-10 transition-colors duration-1000 ${gradientActive ? 'bg-gradient-to-br from-yellow-50 via-orange-50 to-green-50' : 'bg-white'}`}>
+      <Particles 
+        className="absolute inset-0 -z-10"
+        particleCount={300}
+        particleColors={['#1db954', '#FFB347', '#FFFF00']}
+        speed={0.05}
+        particleBaseSize={120} // Increased base size
+        alphaParticles={true}
+        cameraDistance={15}
+        onTripleClick={() => setGradientActive(true)}
+      />
       <div className="max-w-7xl mx-auto">
         {/* Decorative Top Element */}
         <div className="flex items-center gap-2 mb-6">

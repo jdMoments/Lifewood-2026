@@ -4,7 +4,7 @@ import { gsap } from 'gsap';
 const THorizontal: React.FC = () => {
   return (
     <section className="min-h-screen bg-white pt-40 pb-20 px-8 md:px-20">
-      <div className="max-w-7xl mx-auto">
+      <div className="mx-auto">
         {/* Decorative Header */}
         <div className="flex items-center gap-4 mb-10">
           <div className="flex items-center">
@@ -16,19 +16,27 @@ const THorizontal: React.FC = () => {
 
         {/* Main Content Card */}
         <div 
-          className="rounded-[32px] relative overflow-hidden flex flex-col lg:flex-row items-start justify-between gap-10 w-full"
+          className="rounded-[32px] relative overflow-hidden flex flex-col lg:flex-row items-start justify-between gap-10 w-full bg-cover bg-center"
           style={{ 
-            backgroundColor: 'rgb(245, 238, 219)',
             padding: '90px 64px 64px',
             height: 'min-content'
           }}
         >
+          <div className="absolute inset-0 z-0">
+            <img 
+              src="https://images.unsplash.com/photo-1558494949-2412e4232d78?q=80&w=2070&auto=format&fit=crop"
+              alt="Horizontal LLM Data Background"
+              className="w-full h-full object-cover blur-md scale-110"
+              referrerPolicy="no-referrer"
+            />
+            <div className="absolute inset-0 bg-black/40"></div>
+          </div>
           <div className="flex-1 z-10 max-w-2xl">
-            <h1 className="text-5xl md:text-7xl font-bold text-black mb-10 leading-tight tracking-tight">
+            <h1 className="text-5xl md:text-7xl font-bold text-white mb-10 leading-tight tracking-tight">
               Type B -<br />
               Horizontal LLM Data
             </h1>
-            <p className="text-black text-lg md:text-xl max-w-xl leading-relaxed mb-12 opacity-80">
+            <p className="text-white/90 text-lg md:text-xl max-w-xl leading-relaxed mb-12">
               Comprehensive AI data solutions that cover the entire spectrum from data collection and annotation to model testing. Creating multimodal datasets for deep learning, large language models.
             </p>
 
@@ -43,20 +51,19 @@ const THorizontal: React.FC = () => {
             </button>
           </div>
 
-          {/* Draggable 3D Icons Section - Spread out across the wide card */}
-          <div className="absolute inset-0 pointer-events-none">
+          <div className="flex-1 relative h-[400px] w-full max-w-[500px]">
              <DraggableIcon 
               src="https://framerusercontent.com/images/LFAxsa4CpX7e4qBI72ijOV2sHg.png"
-              className="absolute top-[10%] left-[35%] w-40 h-40 z-20 pointer-events-auto"
+              className="absolute top-0 left-0 w-40 h-40 z-20"
               bounce={true}
             />
             <DraggableIcon 
               src="https://framerusercontent.com/images/Tq3lgO9Qy66CFuDaYW99KQ5xoLM.png"
-              className="absolute top-[15%] right-[5%] w-48 h-48 z-10 pointer-events-auto"
+              className="absolute top-0 right-0 w-48 h-48 z-10"
             />
             <DraggableIcon 
               src="https://framerusercontent.com/images/Es0UNVEZFUO6pTmc3NI38eovew.png"
-              className="absolute bottom-[15%] left-[40%] w-56 h-56 z-30 pointer-events-auto"
+              className="absolute bottom-0 left-1/2 -translate-x-1/2 w-56 h-56 z-30"
             />
           </div>
         </div>

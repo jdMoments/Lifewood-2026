@@ -4,7 +4,7 @@ import { gsap } from 'gsap';
 const TVertical: React.FC = () => {
   return (
     <section className="min-h-screen bg-white pt-40 pb-20 px-8 md:px-20">
-      <div className="max-w-7xl mx-auto">
+      <div className="mx-auto">
         {/* Decorative Header */}
         <div className="flex items-center gap-4 mb-10">
           <div className="flex items-center">
@@ -15,13 +15,22 @@ const TVertical: React.FC = () => {
         </div>
 
         {/* Main Content Card */}
-        <div className="bg-[#f5f2ed] rounded-[3rem] p-12 md:p-20 relative overflow-hidden flex flex-col lg:flex-row items-center justify-between gap-12">
+        <div className="rounded-[3rem] p-12 md:p-20 relative overflow-hidden flex flex-col lg:flex-row items-center justify-between gap-12">
+          <div className="absolute inset-0 z-0">
+            <img 
+              src="https://media.istockphoto.com/id/2234469926/photo/llm-artificial-intelligence-interface.webp?a=1&b=1&s=612x612&w=0&k=20&c=Ksr5CXPKoUy_XmTbujT8cyVjpiKIhkItxcov30LmYug="
+              alt="Vertical LLM Data Background"
+              className="w-full h-full object-cover blur-md scale-110"
+              referrerPolicy="no-referrer"
+            />
+            <div className="absolute inset-0 bg-black/50"></div>
+          </div>
           <div className="flex-1 z-10">
-            <h1 className="text-5xl md:text-7xl font-bold text-black mb-10 leading-tight">
+            <h1 className="text-5xl md:text-7xl font-bold text-white mb-10 leading-tight">
               Type C -<br />
               Vertical LLM Data
             </h1>
-            <p className="text-black text-lg md:text-xl max-w-xl leading-relaxed mb-12">
+            <p className="text-white/90 text-lg md:text-xl max-w-xl leading-relaxed mb-12">
               AI data solutions across specific industry verticals including autonomous driving data annotation, in-vehicle data collection and specialized data services for industry, enterprise or private LLM.
             </p>
 
