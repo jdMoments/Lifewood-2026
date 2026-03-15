@@ -1,9 +1,39 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, useDragControls } from 'framer-motion';
+import { supabase } from '../lib/supabase';
 
 const ContactUs: React.FC = () => {
   const sectionRef = React.useRef<HTMLDivElement>(null);
   const dragControls = useDragControls();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setStatus(null);
+
+    try {
+      const { error } = await supabase
+        .from('contact_messages')
+        .insert([{ name, email, message }]);
+
+      if (error) throw error;
+
+      setStatus({ type: 'success', message: 'Message sent successfully!' });
+      setName('');
+      setEmail('');
+      setMessage('');
+    } catch (err: any) {
+      console.error('Error sending message:', err);
+      setStatus({ type: 'error', message: err.message || 'Failed to send message. Please try again.' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div 
@@ -62,11 +92,21 @@ const ContactUs: React.FC = () => {
 
             {/* Form Container */}
             <div className="flex-1 px-12 md:px-16 py-12 flex flex-col justify-center h-full w-full overflow-y-auto">
-              <form className="space-y-8" onSubmit={(e) => e.preventDefault()}>
+              <form className="space-y-8" onSubmit={handleSubmit}>
+                {status && (
+                  <div className={`p-4 rounded-2xl text-sm font-medium ${status.type === 'success' ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>
+                    {status.message}
+                  </div>
+                )}
+
                 <div className="space-y-3">
                   <label className="text-white font-bold text-base ml-1">Name</label>
                   <input 
                     type="text" 
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                    placeholder="Your Name"
                     className="w-full bg-[#44493D]/60 border-none rounded-full px-6 py-4 text-white placeholder-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all"
                   />
                 </div>
@@ -75,6 +115,10 @@ const ContactUs: React.FC = () => {
                   <label className="text-white font-bold text-base ml-1">Email</label>
                   <input 
                     type="email" 
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    placeholder="your@email.com"
                     className="w-full bg-[#44493D]/60 border-none rounded-full px-6 py-4 text-white placeholder-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all"
                   />
                 </div>
@@ -83,6 +127,9 @@ const ContactUs: React.FC = () => {
                   <label className="text-white font-bold text-base ml-1">Message</label>
                   <textarea 
                     rows={5}
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    required
                     placeholder="Message here..."
                     className="w-full bg-[#44493D]/60 border-none rounded-[2rem] px-6 py-5 text-white placeholder-white/40 focus:ring-2 focus:ring-white/10 outline-none transition-all resize-none"
                   />
@@ -91,9 +138,10 @@ const ContactUs: React.FC = () => {
                 <div className="pt-4">
                   <button 
                     type="submit"
-                    className="w-full py-5 bg-[#14261F] text-white rounded-full font-bold text-lg hover:bg-[#0D1A15] transition-all shadow-2xl border border-white/5"
+                    disabled={loading}
+                    className="w-full py-5 bg-[#14261F] text-white rounded-full font-bold text-lg hover:bg-[#0D1A15] transition-all shadow-2xl border border-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Send Message
+                    {loading ? 'Sending...' : 'Send Message'}
                   </button>
                 </div>
               </form>

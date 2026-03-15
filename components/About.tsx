@@ -58,7 +58,7 @@ const About: React.FC = () => {
               <p className="text-lw-text-body dark:text-gray-400 leading-relaxed mb-10 text-lg">
                 {t('about.paragraph2')}
               </p>
-              <a href="#" className="px-9 py-4 bg-lw-green text-white rounded-lg font-bold text-base no-underline shadow-lg shadow-lw-green/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-lw-green/50 hover:bg-lw-green-deep inline-block">
+              <a href="#/about" className="px-9 py-4 bg-lw-green text-white rounded-lg font-bold text-base no-underline shadow-lg shadow-lw-green/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-lw-green/50 hover:bg-lw-green-deep inline-block">
                 {t('about.cta')}
               </a>
             </div>

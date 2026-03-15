@@ -160,8 +160,8 @@ const Navbar: React.FC = () => {
               onClick={() => setIsJoinModalOpen(true)}
               className={`px-5 py-2 rounded-full text-sm font-bold no-underline transition-all shadow-lg cursor-pointer hover:-translate-y-0.5
                 ${isJoinModalOpen 
-                  ? 'bg-[#FFB347] text-white shadow-[#FFB347]/20' 
-                  : 'bg-lw-green text-white hover:bg-[#FFB347] shadow-lw-green/20'
+                  ? 'bg-[#1a2e1a] text-white shadow-[#1a2e1a]/20' 
+                  : 'bg-[#1a2e1a] text-white hover:bg-[#1a2e1a]/90 shadow-[#1a2e1a]/20'
                 }
               `}
             >
@@ -171,7 +171,7 @@ const Navbar: React.FC = () => {
           <li>
             <a 
               href="#/signin"
-              className="px-5 py-2 rounded-full text-sm font-bold no-underline transition-all shadow-lg cursor-pointer hover:-translate-y-0.5 bg-lw-green text-white hover:bg-[#FFB347] shadow-lw-green/20 inline-block"
+              className="px-5 py-2 rounded-full text-sm font-bold no-underline transition-all shadow-lg cursor-pointer hover:-translate-y-0.5 bg-[#1a2e1a] text-white hover:bg-[#1a2e1a]/90 shadow-[#1a2e1a]/20 inline-block"
             >
               Sign In
             </a>
@@ -264,13 +264,13 @@ const Navbar: React.FC = () => {
                       setIsJoinModalOpen(true);
                       setIsMobileMenuOpen(false);
                     }}
-                    className="w-full py-4 bg-lw-green text-white rounded-2xl font-bold text-lg shadow-lg shadow-lw-green/20 hover:bg-[#FFB347] transition-colors"
+                    className="w-full py-4 bg-[#1a2e1a] text-white rounded-2xl font-bold text-lg shadow-lg shadow-[#1a2e1a]/20 hover:bg-[#1a2e1a]/90 transition-colors"
                   >
                     Join Now
                   </button>
                   <a 
                     href="#/signin"
-                    className="w-full py-4 bg-lw-green text-white rounded-2xl font-bold text-lg shadow-lg shadow-lw-green/20 hover:bg-[#FFB347] transition-colors no-underline text-center"
+                    className="w-full py-4 bg-[#1a2e1a] text-white rounded-2xl font-bold text-lg shadow-lg shadow-[#1a2e1a]/20 hover:bg-[#1a2e1a]/90 transition-colors no-underline text-center"
                   >
                     Sign In
                   </a>

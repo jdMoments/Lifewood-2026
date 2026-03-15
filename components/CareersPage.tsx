@@ -116,7 +116,7 @@ const CareersPage: React.FC = () => {
         {/* Bottom CTA Text */}
         <div className="max-w-5xl mx-auto">
           <p className="text-3xl md:text-4xl font-medium text-black leading-tight">
-            If you're looking to turn the page on a new chapter in your career make contact with us today. At Lifewood, the adventure is always before you, it's why we've been described as <span className="text-[#1db954]">"always on, never off."</span>
+            If you're looking to turn the page on a new chapter in your career make contact with us today. At Lifewood, the adventure is always before you, it's why we've been described as <span className="text-lw-green">"always on, never off."</span>
           </p>
         </div>
       </div>

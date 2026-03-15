@@ -70,7 +70,7 @@ const Hero: React.FC = () => {
           className="flex flex-col sm:flex-row justify-center gap-4 animate-fade-in-up"
           style={{ animationDelay: '0.6s' }}
         >
-          <a href="#/contact" className="px-9 py-4 bg-lw-green text-white rounded-lg font-bold text-base no-underline shadow-lg shadow-lw-green/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-lw-green/50 hover:bg-lw-green-deep inline-block">
+          <a href="#/contact" className="px-9 py-4 bg-lw-green-light text-lw-green rounded-lg font-bold text-base no-underline shadow-lg shadow-lw-green-light/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-lw-green-light/50 hover:bg-lw-green-light/90 inline-block">
             {t('hero.ctaContact')}
           </a>
         </div>

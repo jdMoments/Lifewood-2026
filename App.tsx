@@ -21,11 +21,14 @@ import CookiePolicy from './components/CookiePolicy';
 import TermsAndConditions from './components/Term&Condition';
 import SignIn from './components/SignIn';
 import Admin from './components/Admin';
+import User from './components/User';
+import PendingApproval from './components/PendingApproval';
 import CookieSettingsModal from './components/CookieSettingsModal';
 import HelpWidget from './components/HelpWidget';
-import { LanguageProvider } from './context/LanguageContext';
+import { useAuth } from './context/AuthContext';
 
 const App: React.FC = () => {
+  const { user, isApproved, loading: authLoading } = useAuth();
   // Get the current hash, defaulting to '/' for routing purposes
   const getCurrentRoute = () => window.location.hash.substring(1) || '/';
   const [route, setRoute] = useState(getCurrentRoute());
@@ -60,6 +63,14 @@ const App: React.FC = () => {
       window.removeEventListener('hashchange', handleHashChange);
     };
   }, []);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center text-white">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#4ade80]"></div>
+      </div>
+    );
+  }
 
   let currentPage;
   switch (route) {
@@ -113,7 +124,21 @@ const App: React.FC = () => {
       currentPage = <SignIn />;
       break;
     case '/admin':
-      currentPage = <Admin />;
+      // Restrict admin access to specific email
+      if (user?.email === 'damayojholmer@gmail.com') {
+        currentPage = <Admin />;
+      } else if (user && !isApproved) {
+        currentPage = <PendingApproval />;
+      } else {
+        currentPage = <User />;
+      }
+      break;
+    case '/user':
+      if (user && !isApproved) {
+        currentPage = <PendingApproval />;
+      } else {
+        currentPage = <User />;
+      }
       break;
     case '/':
     case 'innovation': // Handle the innovation ID as a route that shows HomePage
@@ -125,18 +150,16 @@ const App: React.FC = () => {
   }
 
   return (
-    <LanguageProvider>
-      <div className="font-sans transition-colors duration-300">
-        {route !== '/aiprojects' && route !== '/internal-news' && route !== '/careers' && route !== '/offices' && route !== '/about' && route !== '/tads' && route !== '/horizontal' && route !== '/vertical' && route !== '/typed' && route !== '/phipact' && route !== '/contact' && route !== '/privacy-policy' && route !== '/cookie-policy' && route !== '/terms-and-conditions' && route !== '/signin' && route !== '/admin' && <Background />}
-        {route !== '/signin' && route !== '/admin' && <Navbar />}
-        <main>
-          {currentPage}
-        </main>
-        {route !== '/signin' && route !== '/admin' && <Footer onCookieSettingsClick={() => setShowCookieSettings(true)} />}
-        <HelpWidget />
-        <CookieSettingsModal isOpen={showCookieSettings} onClose={() => setShowCookieSettings(false)} />
-      </div>
-    </LanguageProvider>
+    <div className="font-sans transition-colors duration-300">
+      {route !== '/aiprojects' && route !== '/internal-news' && route !== '/careers' && route !== '/offices' && route !== '/about' && route !== '/tads' && route !== '/horizontal' && route !== '/vertical' && route !== '/typed' && route !== '/phipact' && route !== '/contact' && route !== '/privacy-policy' && route !== '/cookie-policy' && route !== '/terms-and-conditions' && route !== '/signin' && route !== '/admin' && route !== '/user' && <Background />}
+      {route !== '/signin' && route !== '/admin' && route !== '/user' && <Navbar />}
+      <main>
+        {currentPage}
+      </main>
+      {route !== '/signin' && route !== '/admin' && route !== '/user' && <Footer onCookieSettingsClick={() => setShowCookieSettings(true)} />}
+      <HelpWidget />
+      <CookieSettingsModal isOpen={showCookieSettings} onClose={() => setShowCookieSettings(false)} />
+    </div>
   );
 };
 

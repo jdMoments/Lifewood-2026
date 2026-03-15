@@ -24,7 +24,7 @@ const AIProjects: React.FC = () => {
       <Particles 
         className="absolute inset-0 -z-10"
         particleCount={300}
-        particleColors={['#1db954', '#FFB347', '#FFFF00']}
+        particleColors={['var(--color-lw-green)', '#FFB347', '#FFFF00']}
         speed={0.05}
         particleBaseSize={120} // Increased base size
         alphaParticles={true}

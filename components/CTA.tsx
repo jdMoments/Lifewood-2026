@@ -16,7 +16,7 @@ const CTA: React.FC = () => {
           <p className="text-white/65 text-lg leading-relaxed mb-9">
             {t('cta.paragraph')}
           </p>
-          <a href="#/contact" className="px-9 py-4 bg-lw-green text-white rounded-lg font-bold text-base no-underline shadow-lg shadow-lw-green/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-lw-green/50 hover:bg-lw-green-deep inline-block">
+          <a href="#/contact" className="px-9 py-4 bg-lw-green-light text-lw-green rounded-lg font-bold text-base no-underline shadow-lg shadow-lw-green-light/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-lw-green-light/50 hover:bg-lw-green-light/90 inline-block">
             {t('cta.button')}
           </a>
         </div>
