@@ -73,6 +73,9 @@ const Tads: React.FC = () => {
           </p>
         </div>
 
+        {/* Third Section: Global Ancestry Research */} 
+        <HeritageResearchShowcase />
+
         {/* Interactive Accordion Section */}
         <div className="mt-40 mb-40">
           <h2 className="text-2xl font-bold text-black mb-16 tracking-widest uppercase">
@@ -261,6 +264,133 @@ const DataServicingAccordion: React.FC = () => {
           </div>
         );
       })}
+    </div>
+  );
+};
+
+const HeritageResearchShowcase: React.FC = () => {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const cardRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const heritageData = [
+    {
+      title: 'Multi-Language',
+      subtitle: 'Cross-border discovery',
+      description: 'Documents in different scripts and languages are normalized, translated, and indexed to make family records searchable across regions.',
+      image: 'https://media.istockphoto.com/id/480331672/photo/greeting-words-written-into-speech-bubles.webp?a=1&b=1&s=612x612&w=0&k=20&c=zQx0gUsP5KrSIZsyD9sxHhz8W1LiJPPTmAqsj00mLJA=',
+      accent: 'bg-lw-green'
+    },
+    {
+      title: 'Genealogy',
+      subtitle: 'Lineage reconstruction',
+      description: 'Birth, marriage, and migration records are linked into connected family lines, helping researchers trace ancestry with stronger confidence.',
+      image: 'https://images.unsplash.com/photo-1701200241941-44c0a4dd0c60?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8R2VuZWFsb2d5fGVufDB8fDB8fHww',
+      accent: 'bg-[#FFB347]'
+    },
+    {
+      title: 'Newspapers',
+      subtitle: 'Context enrichment',
+      description: 'Historical news is processed for names, places, and dates, adding cultural context around families, events, and local histories.',
+      image: 'https://images.unsplash.com/photo-1615403916271-e2dbc8cf3bf4?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8M3x8bmV3c3BhcGVyc3xlbnwwfHwwfHx8MA%3D%3D',
+      accent: 'bg-emerald-300'
+    },
+    {
+      title: 'Archives',
+      subtitle: 'Long-term preservation',
+      description: 'Fragile source materials are digitized, quality-checked, and structured for future access by institutions, families, and researchers.',
+      image: 'https://plus.unsplash.com/premium_photo-1677567996070-68fa4181775a?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8YXJjaGl2ZXN8ZW58MHx8MHx8fDA%3D',
+      accent: 'bg-sky-300'
+    }
+  ];
+
+  useEffect(() => {
+    if (!cardRefs.current.length) return;
+    gsap.fromTo(
+      cardRefs.current,
+      { y: 30, opacity: 0, scale: 0.96 },
+      {
+        y: 0,
+        opacity: 1,
+        scale: 1,
+        duration: 0.7,
+        ease: 'power2.out',
+        stagger: 0.12
+      }
+    );
+  }, []);
+
+  useEffect(() => {
+    const autoPlay = window.setInterval(() => {
+      setActiveIndex((prev) => (prev + 1) % heritageData.length);
+    }, 4500);
+
+    return () => window.clearInterval(autoPlay);
+  }, [heritageData.length]);
+
+  return (
+    <div className="mt-28 rounded-[3rem] bg-[linear-gradient(145deg,#022a24_0%,#0b3d35_35%,#111827_100%)] p-8 md:p-12 xl:p-14 relative overflow-hidden">
+      <div className="absolute -top-16 right-12 w-56 h-56 rounded-full bg-[#FFB347]/25 blur-3xl" />
+      <div className="absolute -bottom-20 left-6 w-64 h-64 rounded-full bg-lw-green/25 blur-3xl" />
+
+      <div className="relative z-10 flex flex-col xl:flex-row gap-8 xl:items-end xl:justify-between mb-10">
+        <div className="max-w-3xl">
+          <div className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-white/15 text-white text-xs tracking-widest uppercase font-bold mb-4">
+            <span>003</span>
+            <span>Global Ancestry Intelligence</span>
+          </div>
+          <h3 className="text-4xl md:text-6xl font-bold text-white leading-tight mb-4">
+            Multi-language genealogy documents, newspapers, and archives.
+          </h3>
+          <p className="text-white/75 text-base md:text-lg leading-relaxed">
+            Lifewood combines multilingual data operations, archive digitization, and AI extraction workflows to support reliable global ancestry research at scale.
+          </p>
+        </div>
+
+        <div className="w-full xl:w-[360px] rounded-2xl border border-white/15 bg-white/10 backdrop-blur-sm p-5">
+          <p className="text-[11px] text-white/60 uppercase tracking-widest font-bold mb-2">Current Focus</p>
+          <h4 className="text-2xl font-bold text-white">{heritageData[activeIndex].title}</h4>
+          <p className="text-sm text-[#FFB347] mt-1">{heritageData[activeIndex].subtitle}</p>
+          <p className="text-sm text-white/80 mt-3 leading-relaxed">{heritageData[activeIndex].description}</p>
+        </div>
+      </div>
+
+      <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {heritageData.map((item, index) => {
+          const isActive = index === activeIndex;
+          return (
+            <button
+              key={item.title}
+              ref={(el) => {
+                cardRefs.current[index] = el;
+              }}
+              onMouseEnter={() => setActiveIndex(index)}
+              onFocus={() => setActiveIndex(index)}
+              className={`text-left group relative rounded-[1.75rem] overflow-hidden border transition-all duration-700 ${
+                isActive
+                  ? 'border-white/70 -translate-y-2 shadow-[0_25px_50px_rgba(0,0,0,0.35)]'
+                  : 'border-white/20 opacity-80 hover:opacity-100'
+              }`}
+            >
+              <div className="relative h-[300px]">
+                <img
+                  src={item.image}
+                  alt={item.title}
+                  className={`w-full h-full object-cover transition-all duration-700 ${
+                    isActive ? 'scale-105 grayscale-0' : 'grayscale-[40%] group-hover:grayscale-0'
+                  }`}
+                  referrerPolicy="no-referrer"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
+                <div className={`absolute top-4 left-4 w-2.5 h-2.5 rounded-full ${item.accent}`} />
+                <div className="absolute bottom-4 left-4 right-4">
+                  <p className="text-[11px] text-white/65 uppercase tracking-widest font-bold">{item.subtitle}</p>
+                  <h5 className="text-2xl font-bold text-white">{item.title}</h5>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 };

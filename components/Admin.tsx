@@ -69,6 +69,7 @@ const Admin: React.FC = () => {
   const [applications, setApplications] = useState<any[]>([]);
   const [selectedApplicant, setSelectedApplicant] = useState<any>(null);
   const [darkMode, setDarkMode] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [actioningUserId, setActioningUserId] = useState<string | null>(null);
   const [evaluationRoleFilter, setEvaluationRoleFilter] = useState<'intern' | 'employee'>('intern');
   const [selectedEvaluationUserId, setSelectedEvaluationUserId] = useState('');
@@ -697,34 +698,60 @@ const Admin: React.FC = () => {
   return (
     <div className={`min-h-screen flex font-sans transition-colors duration-300 ${darkMode ? 'bg-[#0f172a] text-slate-200' : 'bg-white text-[#1a1a1a]'}`}>
       {/* Sidebar */}
-      <aside className={`w-64 border-r flex flex-col p-6 fixed h-full z-20 transition-colors duration-300 ${darkMode ? 'bg-[#1e293b] border-slate-800' : 'bg-white border-emerald-100'}`}>
-        <div 
-          className="flex items-center gap-3 mb-12 cursor-pointer group"
-          onClick={() => setIsProfileOpen(true)}
-        >
-          <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white font-bold group-hover:scale-110 transition-transform">
-            ⚡
+      <aside
+        className={`${isSidebarCollapsed ? 'w-24' : 'w-64'} border-r flex flex-col p-6 fixed h-full z-20 transition-all duration-300 overflow-y-auto backdrop-blur-xl ${darkMode ? 'bg-white/10 border-white/20 shadow-[0_0_30px_rgba(15,23,42,0.35)]' : 'bg-white/45 border-white/60 shadow-[0_0_30px_rgba(16,185,129,0.15)]'}`}
+        style={{ scrollbarWidth: 'thin' }}
+      >
+        <div className={`mb-12 ${isSidebarCollapsed ? 'space-y-3' : ''}`}>
+          <div className={`flex items-center ${isSidebarCollapsed ? 'flex-col gap-3' : 'justify-between gap-3'}`}>
+            <button
+              className="cursor-pointer group bg-transparent border-0 p-0"
+              onClick={() => setIsProfileOpen(true)}
+              title="Open profile"
+            >
+              <img
+                src="https://framerusercontent.com/images/BZSiFYgRc4wDUAuEybhJbZsIBQY.png?width=1519&height=429"
+                alt="Lifewood"
+                className={`${isSidebarCollapsed ? 'h-8 w-8 object-contain' : 'h-8 w-auto max-w-[140px]'}`}
+                referrerPolicy="no-referrer"
+              />
+            </button>
+            <button
+              onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+              className={`rounded-lg p-1 transition-colors ${darkMode ? 'hover:bg-slate-800' : 'hover:bg-emerald-50'}`}
+              title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              <span className="flex flex-col justify-center gap-0.5 w-5 h-5">
+                <span className={`h-0.5 rounded-sm transition-all ${darkMode ? 'bg-slate-200' : 'bg-black'}`}></span>
+                <span className={`h-0.5 rounded-sm transition-all ${darkMode ? 'bg-slate-200' : 'bg-black'}`}></span>
+                <span className={`h-0.5 rounded-sm transition-all ${darkMode ? 'bg-slate-200' : 'bg-black'}`}></span>
+              </span>
+            </button>
           </div>
-          <span className={`font-bold text-xl tracking-tight transition-colors ${darkMode ? 'text-slate-100 group-hover:text-emerald-400' : 'group-hover:text-emerald-600'}`}>Lifewood</span>
-          <span className="text-[10px] bg-emerald-50 px-2 py-0.5 rounded uppercase font-bold text-emerald-600">Hub</span>
+          {!isSidebarCollapsed && (
+            <span className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold ${darkMode ? 'bg-white/10 text-emerald-300 border border-emerald-300/20' : 'bg-white/70 text-emerald-700 border border-emerald-200'}`}>Admin Hub</span>
+          )}
         </div>
 
         <div className="flex-grow">
           <div className="mb-8">
-            <p className={`text-[10px] font-bold uppercase tracking-widest mb-4 px-4 ${darkMode ? 'text-slate-500' : 'text-emerald-600/40'}`}>Main Menu</p>
+            {!isSidebarCollapsed && (
+              <p className={`text-[10px] font-bold uppercase tracking-widest mb-4 px-4 ${darkMode ? 'text-slate-500' : 'text-emerald-600/40'}`}>Main Menu</p>
+            )}
             <ul className="space-y-2 list-none p-0">
               {menuItems.map((item) => (
                 <li key={item.label}>
                   <button
                     onClick={() => setActiveTab(item.label)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                    title={item.label}
+                    className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all ${
                       activeTab === item.label
-                        ? (darkMode ? 'bg-slate-800 text-emerald-400 border-r-4 border-emerald-500' : 'bg-emerald-50 text-emerald-600 border-r-4 border-emerald-600')
-                        : (darkMode ? 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/50' : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50/50')
+                        ? (darkMode ? 'bg-emerald-500/20 text-emerald-300 border-l-4 border-emerald-400' : 'bg-emerald-500/15 text-emerald-700 border-l-4 border-emerald-600')
+                        : (darkMode ? 'text-slate-300 hover:text-emerald-300 hover:bg-emerald-500/15' : 'text-gray-600 hover:text-emerald-700 hover:bg-emerald-500/12')
                     }`}
                   >
                     <span className="text-lg">{item.icon}</span>
-                    <span className="text-sm font-medium">{item.label}</span>
+                    {!isSidebarCollapsed && <span className="text-sm font-medium">{item.label}</span>}
                   </button>
                 </li>
               ))}
@@ -732,26 +759,30 @@ const Admin: React.FC = () => {
           </div>
 
           <div>
-            <p className={`text-[10px] font-bold uppercase tracking-widest mb-4 px-4 ${darkMode ? 'text-slate-500' : 'text-emerald-600/40'}`}>Settings</p>
+            {!isSidebarCollapsed && (
+              <p className={`text-[10px] font-bold uppercase tracking-widest mb-4 px-4 ${darkMode ? 'text-slate-500' : 'text-emerald-600/40'}`}>Settings</p>
+            )}
             <ul className="space-y-2 list-none p-0">
               {settingsItems.map((item) => (
                 <li key={item.label}>
                   <a
                     href="#"
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all no-underline ${darkMode ? 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/50' : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50/50'}`}
+                    title={item.label}
+                    className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all no-underline ${darkMode ? 'text-slate-300 hover:text-emerald-300 hover:bg-emerald-500/15' : 'text-gray-600 hover:text-emerald-700 hover:bg-emerald-500/12'}`}
                   >
                     <span className="text-lg">{item.icon}</span>
-                    <span className="text-sm font-medium">{item.label}</span>
+                    {!isSidebarCollapsed && <span className="text-sm font-medium">{item.label}</span>}
                   </a>
                 </li>
               ))}
               <li>
                 <button
                   onClick={() => setDarkMode(!darkMode)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${darkMode ? 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/50' : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50/50'}`}
+                  title={darkMode ? 'Light mode' : 'Dark mode'}
+                  className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all ${darkMode ? 'text-slate-300 hover:text-emerald-300 hover:bg-emerald-500/15' : 'text-gray-600 hover:text-emerald-700 hover:bg-emerald-500/12'}`}
                 >
                   <span className="text-lg">{darkMode ? '☀️' : '🌙'}</span>
-                  <span className="text-sm font-medium">{darkMode ? 'Light Mode' : 'Dark Mode'}</span>
+                  {!isSidebarCollapsed && <span className="text-sm font-medium">{darkMode ? 'Light Mode' : 'Dark Mode'}</span>}
                 </button>
               </li>
             </ul>
@@ -759,13 +790,14 @@ const Admin: React.FC = () => {
         </div>
 
         {/* User Profile */}
-        <div className={`mt-auto pt-6 border-t ${darkMode ? 'border-slate-800' : 'border-emerald-100'}`}>
-          <div className={`flex items-center justify-between p-3 rounded-2xl ${darkMode ? 'bg-slate-800/50' : 'bg-emerald-50/50'}`}>
-            <div 
-              className="flex items-center gap-3 cursor-pointer group"
-              onClick={() => setIsProfileOpen(true)}
-            >
-              <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold group-hover:scale-110 transition-transform">
+        <div className={`mt-auto pt-6 border-t ${darkMode ? 'border-white/20' : 'border-emerald-200/60'}`}>
+          {isSidebarCollapsed ? (
+            <div className="flex flex-col items-center gap-3">
+              <button
+                onClick={() => setIsProfileOpen(true)}
+                className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold hover:scale-105 transition-transform"
+                title="Profile"
+              >
                 {profile?.avatar_url ? (
                   <img
                     src={profile.avatar_url}
@@ -775,24 +807,51 @@ const Admin: React.FC = () => {
                 ) : (
                   user.email?.[0].toUpperCase() || 'U'
                 )}
-              </div>
-              <div className="overflow-hidden">
-                <p className={`text-sm font-bold truncate transition-colors ${darkMode ? 'text-slate-200 group-hover:text-emerald-400' : 'group-hover:text-emerald-600'}`}>{profile?.full_name || user.email?.split('@')[0] || 'User'}</p>
-                <p className={`text-[10px] ${darkMode ? 'text-slate-500' : 'text-emerald-600/60'}`}>{profile?.role || 'Intern Access'}</p>
-              </div>
+              </button>
+              <button
+                onClick={handleSignOut}
+                className={`transition-colors ${darkMode ? 'text-slate-500 hover:text-emerald-400' : 'text-gray-400 hover:text-emerald-600'}`}
+                title="Sign out"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              </button>
             </div>
-            <button 
-              onClick={handleSignOut}
-              className={`transition-colors ${darkMode ? 'text-slate-500 hover:text-emerald-400' : 'text-gray-400 hover:text-emerald-600'}`}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-            </button>
-          </div>
+          ) : (
+            <div className={`flex items-center justify-between p-3 rounded-2xl ${darkMode ? 'bg-white/10 border border-white/10' : 'bg-white/60 border border-emerald-100'}`}>
+              <div
+                className="flex items-center gap-3 cursor-pointer group"
+                onClick={() => setIsProfileOpen(true)}
+              >
+                <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold group-hover:scale-110 transition-transform">
+                  {profile?.avatar_url ? (
+                    <img
+                      src={profile.avatar_url}
+                      alt={profile?.full_name || 'Profile'}
+                      className="w-full h-full rounded-full object-cover"
+                    />
+                  ) : (
+                    user.email?.[0].toUpperCase() || 'U'
+                  )}
+                </div>
+                <div className="overflow-hidden">
+                  <p className={`text-sm font-bold truncate transition-colors ${darkMode ? 'text-slate-200 group-hover:text-emerald-400' : 'group-hover:text-emerald-600'}`}>{profile?.full_name || user.email?.split('@')[0] || 'User'}</p>
+                  <p className={`text-[10px] ${darkMode ? 'text-slate-500' : 'text-emerald-600/60'}`}>{profile?.role || 'Intern Access'}</p>
+                </div>
+              </div>
+              <button
+                onClick={handleSignOut}
+                className={`transition-colors ${darkMode ? 'text-slate-500 hover:text-emerald-400' : 'text-gray-400 hover:text-emerald-600'}`}
+                title="Sign out"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-grow ml-64 p-8">
+      <main className={`flex-grow ${isSidebarCollapsed ? 'ml-24' : 'ml-64'} p-8 transition-all duration-300`}>
         {activeTab === 'Dashboard' ? (
           <>
             {/* Summary Cards Grid */}

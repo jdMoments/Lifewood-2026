@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { SERVICES_DATA } from '../constants';
 import { useInView } from '../hooks/useInView';
 import { useTranslation } from '../hooks/useTranslation';
@@ -68,6 +68,7 @@ const ServiceCard: React.FC<ServiceCardProps> = ({ icon, titleKey, descKey, dela
 
 const AIServicesPage: React.FC = () => {
   const { t } = useTranslation();
+  const [activeAcquisitionGroup, setActiveAcquisitionGroup] = useState(0);
 
   const dataAcquisitionImages = [
     "https://framerusercontent.com/images/yjMdJFr66IhvYe68neYuBjcicH0.jpg?width=3168&height=4752",
@@ -78,6 +79,19 @@ const AIServicesPage: React.FC = () => {
     "https://framerusercontent.com/images/3sCfN00csSYqscMgbgLnn0sbnoQ.jpg?width=3643&height=5464",
     "https://framerusercontent.com/images/Mg11nxppNqUGtQctTKiGgumMuo.jpg?width=4000&height=2667"
   ];
+
+  const dataAcquisitionGroups = [
+    dataAcquisitionImages.slice(0, 4),
+    dataAcquisitionImages.slice(4, 7),
+  ];
+
+  useEffect(() => {
+    const groupSwitcher = window.setInterval(() => {
+      setActiveAcquisitionGroup((prev) => (prev + 1) % dataAcquisitionGroups.length);
+    }, 9000);
+
+    return () => window.clearInterval(groupSwitcher);
+  }, [dataAcquisitionGroups.length]);
 
   return (
     <div className="relative bg-white min-h-screen">
@@ -262,33 +276,49 @@ const AIServicesPage: React.FC = () => {
               className="md:col-span-4"
               borderRadius="2.5rem"
             >
-              <div className="bg-lw-bg-section p-8 flex flex-col relative overflow-hidden h-full">
-                <h3 className="text-2xl font-bold mb-4">Data Acquisition</h3>
-                <p className="text-lw-text-body text-xs leading-relaxed mb-6">
+              <div className="bg-[#020617] p-8 flex flex-col relative overflow-hidden h-full text-white">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(129,140,248,0.35),transparent_45%),radial-gradient(circle_at_82%_12%,rgba(56,189,248,0.28),transparent_50%),radial-gradient(circle_at_50%_82%,rgba(236,72,153,0.24),transparent_50%)]" />
+                <div className="absolute inset-0 opacity-60 bg-[radial-gradient(rgba(255,255,255,0.8)_1px,transparent_1px)] [background-size:22px_22px]" />
+                <div className="absolute -inset-10 bg-[conic-gradient(from_40deg_at_60%_40%,rgba(99,102,241,0.12),rgba(14,165,233,0.1),rgba(236,72,153,0.08),rgba(99,102,241,0.12))] blur-3xl" />
+                <h3 className="text-2xl font-bold mb-4 relative z-10">Data Acquisition</h3>
+                <p className="text-white/75 text-xs leading-relaxed mb-6 relative z-10">
                   We provide end-to-end data acquisition solutions—capturing, processing, and managing large-scale, diverse datasets.
                 </p>
-                <div className="mt-auto flex justify-center items-center relative py-10 overflow-hidden">
-                  <OrbitImages 
-                    images={dataAcquisitionImages}
-                    shape="circle"
-                    radius={120}
-                    itemSize={[40, 60, 50, 70, 45, 55]}
-                    duration={30}
-                    responsive={true}
-                    baseWidth={400}
-                    showConcentricCircles={true}
-                    concentricCirclesCount={3}
-                    pathColor="rgba(0,0,0,0.05)"
-                    centerContent={
-                      <div className="flex flex-col items-center justify-center">
-                        <img 
-                          src="https://framerusercontent.com/images/BZSiFYgRc4wDUAuEybhJbZsIBQY.png?width=1519&height=429" 
-                          alt="Lifewood Logo" 
-                          className="w-32 h-auto opacity-90" 
+                <div className="mt-auto flex justify-center items-center relative py-6 overflow-hidden z-10 rounded-[2rem] border border-white/20 bg-black/25 backdrop-blur-[2px] min-h-[320px]">
+                  <div className="relative w-full h-[290px] max-w-[360px]">
+                    {dataAcquisitionGroups.map((group, groupIndex) => (
+                      <div
+                        key={`acquisition-group-${groupIndex}`}
+                        className={`absolute inset-0 transition-all duration-[1400ms] ease-in-out ${
+                          activeAcquisitionGroup === groupIndex ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
+                        }`}
+                      >
+                        <OrbitImages 
+                          images={group}
+                          shape="circle"
+                          radius={groupIndex === 0 ? 120 : 110}
+                          itemSize={groupIndex === 0 ? [62, 56, 64, 58] : [76, 68, 72]}
+                          duration={56}
+                          responsive={true}
+                          baseWidth={400}
+                          showConcentricCircles={true}
+                          concentricCirclesCount={3}
+                          pathColor="rgba(255,255,255,0.12)"
+                          centerContent={
+                            <div className="flex flex-col items-center justify-center">
+                              <div className="w-28 h-28 rounded-full bg-white/5 border border-white/20 backdrop-blur-sm flex items-center justify-center shadow-[0_0_30px_rgba(99,102,241,0.35)]">
+                                <img 
+                                  src="https://framerusercontent.com/images/BZSiFYgRc4wDUAuEybhJbZsIBQY.png?width=1519&height=429" 
+                                  alt="Lifewood Logo" 
+                                  className="w-20 h-auto opacity-95" 
+                                />
+                              </div>
+                            </div>
+                          }
                         />
                       </div>
-                    }
-                  />
+                    ))}
+                  </div>
                 </div>
               </div>
             </GlareHover>
@@ -345,6 +375,7 @@ const AIServicesPage: React.FC = () => {
           </div>
         </div>
       </section>
+
     </div>
   );
 };

@@ -1,13 +1,80 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 import SignUpModal from './SignUpModal';
+import FloatingLines from './FloatingLines';
 
 const ADMIN_EMAIL = 'damayojholmer@gmail.com';
 
 const isMissingDeclinedColumnError = (error: any) => {
   const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
   return message.includes('is_declined') && message.includes('does not exist');
+};
+
+const PasswordEyeIcon: React.FC<{ isOpen: boolean }> = ({ isOpen }) => {
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      {isOpen ? (
+        <motion.svg
+          key="eye-open"
+          xmlns="http://www.w3.org/2000/svg"
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          initial={{ opacity: 0, scale: 0.75, y: 2 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.75, y: -2 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+        >
+          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+          <motion.circle
+            cx="12"
+            cy="12"
+            r="3"
+            initial={{ scale: 0.6, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.6, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+          />
+        </motion.svg>
+      ) : (
+        <motion.svg
+          key="eye-closed"
+          xmlns="http://www.w3.org/2000/svg"
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          initial={{ opacity: 0, scale: 0.75, y: -2 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.75, y: 2 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+        >
+          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+          <circle cx="12" cy="12" r="3" />
+          <motion.line
+            x1="3"
+            y1="21"
+            x2="21"
+            y2="3"
+            initial={{ pathLength: 0 }}
+            animate={{ pathLength: 1 }}
+            exit={{ pathLength: 0 }}
+            transition={{ duration: 0.2 }}
+          />
+        </motion.svg>
+      )}
+    </AnimatePresence>
+  );
 };
 
 const SignIn: React.FC = () => {
@@ -18,6 +85,7 @@ const SignIn: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isSignUpModalOpen, setIsSignUpModalOpen] = useState(false);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,9 +166,9 @@ const SignIn: React.FC = () => {
     setIsSignUpModalOpen(true);
   };
 
-  const handleSignUpSuccess = (email: string, password: string) => {
-    setEmail(email);
-    setPassword(password);
+  const handleSignUpSuccess = (nextEmail: string, nextPassword: string) => {
+    setEmail(nextEmail);
+    setPassword(nextPassword);
   };
 
   const handleOAuthSignIn = async (provider: 'google' | 'github') => {
@@ -118,17 +186,30 @@ const SignIn: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-4 md:p-8">
-      <motion.div 
+    <div className="relative min-h-screen overflow-hidden bg-[#020617] flex items-center justify-center p-4 md:p-8">
+      <FloatingLines
+        className="absolute inset-0"
+        linesGradient={['#E947F5', '#2F4BA2', '#60A5FA', '#34D399']}
+        enabledWaves={['top', 'middle', 'bottom']}
+        lineCount={[7, 9, 7]}
+        lineDistance={[5, 6, 5]}
+        animationSpeed={1}
+        interactive={false}
+        parallax={true}
+        parallaxStrength={0.12}
+        mixBlendMode="screen"
+      />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(2,6,23,0.15)_0%,rgba(2,6,23,0.65)_70%,rgba(2,6,23,0.9)_100%)]" />
+
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-[1100px] bg-white rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.05)] overflow-hidden flex flex-col lg:flex-row min-h-[700px]"
+        className="relative z-10 w-full max-w-[1100px] rounded-[32px] border border-white/35 bg-white/10 backdrop-blur-xl shadow-[0_20px_60px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col lg:flex-row min-h-[700px]"
       >
-        {/* Left Side - Form */}
-        <div className="w-full lg:w-1/2 p-8 md:p-16 flex flex-col relative z-10">
+        <div className="w-full lg:w-1/2 p-8 md:p-16 flex flex-col relative z-10 bg-white/88">
           <div className="mb-12">
-            <a 
-              href="#/" 
+            <a
+              href="#/"
               className="inline-flex items-center gap-2 text-gray-400 hover:text-lw-green transition-colors no-underline text-sm font-medium"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
@@ -136,11 +217,13 @@ const SignIn: React.FC = () => {
             </a>
           </div>
 
-          <div className="flex items-center gap-2 mb-10">
-            <div className="w-8 h-8 rounded-lg bg-lw-green flex items-center justify-center">
-              <div className="w-3 h-3 rounded-full bg-white"></div>
-            </div>
-            <span className="font-bold text-2xl tracking-tight text-lw-green">lifewood</span>
+          <div className="mb-10">
+            <img
+              src="https://framerusercontent.com/images/BZSiFYgRc4wDUAuEybhJbZsIBQY.png?width=1519&height=429"
+              alt="Lifewood"
+              className="h-10 w-auto"
+              referrerPolicy="no-referrer"
+            />
           </div>
 
           <div className="mb-10">
@@ -149,7 +232,7 @@ const SignIn: React.FC = () => {
           </div>
 
           {error && (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-2xl mb-6 text-sm flex items-center gap-3"
@@ -160,7 +243,7 @@ const SignIn: React.FC = () => {
           )}
 
           {success && (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               className="bg-green-50 border border-green-100 text-green-600 p-4 rounded-2xl mb-6 text-sm flex items-center gap-3"
@@ -173,10 +256,16 @@ const SignIn: React.FC = () => {
           <form className="space-y-5" onSubmit={handleSignIn}>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
-              <input 
-                type="email" 
+              <input
+                type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Tab' && !e.shiftKey) {
+                    e.preventDefault();
+                    passwordInputRef.current?.focus();
+                  }
+                }}
                 placeholder="name@company.com"
                 required
                 className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-4 px-5 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-lw-green/20 focus:border-lw-green transition-all"
@@ -189,29 +278,27 @@ const SignIn: React.FC = () => {
                 <a href="#" className="text-sm font-bold text-lw-green hover:underline transition-all no-underline">Forgot password?</a>
               </div>
               <div className="relative">
-                <input 
-                  type={showPassword ? "text" : "password"} 
+                <input
+                  ref={passwordInputRef}
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                   required
                   className="w-full bg-gray-50 border border-gray-200 rounded-2xl py-4 px-5 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-lw-green/20 focus:border-lw-green transition-all"
                 />
-                <button 
+                <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute inset-y-0 right-3 my-auto h-10 w-10 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
                 >
-                  {showPassword ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.52 13.52 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
-                  ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                  )}
+                  <PasswordEyeIcon isOpen={showPassword} />
                 </button>
               </div>
             </div>
 
-            <button 
+            <button
               type="submit"
               disabled={loading}
               className="w-full bg-lw-green text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-lw-green/90 shadow-lg shadow-lw-green/20 transition-all group disabled:opacity-50 disabled:cursor-not-allowed mt-4"
@@ -227,14 +314,14 @@ const SignIn: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <button 
+              <button
                 type="button"
                 onClick={() => handleOAuthSignIn('google')}
                 className="flex items-center justify-center py-3 px-6 rounded-2xl bg-white border border-gray-200 hover:bg-gray-50 transition-all shadow-sm"
               >
-                <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_Logo.svg" alt="Google" className="h-5 w-5" />
+                <img src="https://cdn2.hubspot.net/hubfs/53/image8-2.jpg" alt="Google" className="h-5 w-auto object-contain" />
               </button>
-              <button 
+              <button
                 type="button"
                 onClick={() => handleOAuthSignIn('github')}
                 className="flex items-center justify-center py-3 px-6 rounded-2xl bg-white border border-gray-200 hover:bg-gray-50 transition-all shadow-sm"
@@ -246,8 +333,8 @@ const SignIn: React.FC = () => {
 
           <div className="mt-auto pt-10 text-center">
             <p className="text-gray-500 text-sm">
-              Don't have an account? {' '}
-              <button 
+              Don't have an account?{' '}
+              <button
                 onClick={handleSignUpClick}
                 className="text-lw-green font-bold hover:underline transition-all"
               >
@@ -255,16 +342,13 @@ const SignIn: React.FC = () => {
               </button>
             </p>
           </div>
-
         </div>
 
-        {/* Right Side - Visuals with Diagonal Design */}
-        <div className="hidden lg:flex w-1/2 bg-lw-green relative items-center justify-center p-12 overflow-hidden">
-          {/* Diagonal Background Element */}
+        <div className="hidden lg:flex w-1/2 bg-lw-green/50 backdrop-blur-sm relative items-center justify-center p-12 overflow-hidden">
           <div className="absolute inset-0 bg-lw-green-deep opacity-20 transform -skew-x-12 translate-x-1/2"></div>
-          
+
           <div className="relative z-10 w-full max-w-md space-y-6">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.2 }}
@@ -279,7 +363,7 @@ const SignIn: React.FC = () => {
               </p>
             </motion.div>
 
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.3 }}
@@ -294,7 +378,7 @@ const SignIn: React.FC = () => {
               </p>
             </motion.div>
 
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.4 }}
@@ -310,15 +394,14 @@ const SignIn: React.FC = () => {
             </motion.div>
           </div>
 
-          {/* Decorative Circles */}
           <div className="absolute -bottom-20 -right-20 w-64 h-64 bg-white/10 rounded-full blur-3xl"></div>
           <div className="absolute -top-20 -left-20 w-64 h-64 bg-lw-green-deep/20 rounded-full blur-3xl"></div>
         </div>
       </motion.div>
 
-      <SignUpModal 
-        isOpen={isSignUpModalOpen} 
-        onClose={() => setIsSignUpModalOpen(false)} 
+      <SignUpModal
+        isOpen={isSignUpModalOpen}
+        onClose={() => setIsSignUpModalOpen(false)}
         onSuccess={handleSignUpSuccess}
       />
     </div>

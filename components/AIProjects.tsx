@@ -8,6 +8,34 @@ const AIProjects: React.FC = () => {
   const { t } = useTranslation();
   const [openIndex, setOpenIndex] = React.useState<number | null>(0);
   const [gradientActive, setGradientActive] = React.useState(false);
+  const ideaBoardRows = [
+    {
+      project: "Voice AI for Rural Banking",
+      problem: "Customers struggle with text-heavy mobile apps in low-connectivity regions.",
+      aiApproach: "Multilingual speech agent + lightweight on-device intent classification.",
+      impact: "Faster onboarding and inclusive access to financial services.",
+      owner: "Product + NLP Team"
+    },
+    {
+      project: "Archive Intelligence Studio",
+      problem: "Historical records are difficult to search due to inconsistent formats.",
+      aiApproach: "Document OCR pipeline + entity extraction + confidence-based validation loop.",
+      impact: "Searchable, structured archives for researchers and institutions.",
+      owner: "Data Ops Team"
+    },
+    {
+      project: "Visual Defect Radar",
+      problem: "Manual quality checks miss subtle defects in high-volume manufacturing.",
+      aiApproach: "Computer vision anomaly detection with human-in-the-loop review dashboard.",
+      impact: "Improved quality control and reduced inspection cost per unit.",
+      owner: "CV Team"
+    }
+  ];
+  const submissionRows = [
+    { name: "Customer Assist Copilot", link: "https://assist-demo.example.com", stage: "Live", focus: "NLP" },
+    { name: "AI Archive Scanner", link: "https://archive-lab.example.org", stage: "Beta", focus: "OCR + Search" },
+    { name: "Defect Vision Monitor", link: "https://vision-preview.example.io", stage: "Prototype", focus: "Computer Vision" },
+  ];
 
   const projectImages = [
     "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=2070&auto=format&fit=crop", // 2.1
@@ -92,6 +120,207 @@ const AIProjects: React.FC = () => {
             {/* Right side: Accordion */}
             <div className="lg:w-1/2 w-full">
               <ProjectAccordion openIndex={openIndex} setOpenIndex={setOpenIndex} />
+            </div>
+          </div>
+        </div>
+
+        {/* Third Section: Share Your Projects */} 
+        <div className="mt-32">
+          <div className="rounded-[2.25rem] border border-black/10 bg-gradient-to-br from-[#f9fff5] via-[#fff7eb] to-[#f2fffb] p-8 md:p-12 shadow-[0_24px_60px_rgba(0,0,0,0.08)]">
+            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-8 mb-10">
+              <div className="max-w-3xl">
+                <span className="inline-flex items-center gap-2 px-4 py-1 bg-black text-white text-xs font-bold rounded-full uppercase tracking-widest mb-4">
+                  Share Your Projects
+                </span>
+                <h2 className="text-4xl md:text-5xl font-bold text-black leading-tight mb-5">
+                  Turn your AI concept into a project roadmap.
+                </h2>
+                <p className="text-[#2f2f2f] text-base md:text-lg leading-relaxed">
+                  Bring your raw idea, half-formed notes, or full proposal. This section helps teams align on the core challenge, AI method, expected outcome, and ownership before execution starts.
+                </p>
+              </div>
+              <div className="lg:max-w-xs">
+                <div className="rounded-2xl bg-black text-white px-6 py-5">
+                  <p className="text-xs uppercase tracking-widest text-white/70 mb-2">Creative Prompt</p>
+                  <p className="text-sm leading-relaxed">
+                    If your project succeeds in 90 days, what experience becomes easier for real people?
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-black/15 bg-white/90 overflow-hidden">
+              <div className="px-6 py-4 border-b border-black/10 bg-white">
+                <h3 className="text-lg md:text-xl font-bold text-black">Project Idea Board</h3>
+                <p className="text-sm text-black/65 mt-1">
+                  Use this frame to present ideas clearly and compare initiatives side by side.
+                </p>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[880px] border-collapse">
+                  <thead>
+                    <tr className="bg-[#f6f6f6] text-left">
+                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider border-b border-r border-black/10">Project Idea</th>
+                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider border-b border-r border-black/10">Problem To Solve</th>
+                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider border-b border-r border-black/10">AI Approach</th>
+                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider border-b border-r border-black/10">Expected Impact</th>
+                      <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider border-b border-black/10">Team Owner</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ideaBoardRows.map((row, index) => (
+                      <tr key={row.project} className={index % 2 === 0 ? 'bg-white' : 'bg-[#fcfcfc]'}>
+                        <td className="px-5 py-4 align-top border-b border-r border-black/10 text-sm font-semibold text-black">{row.project}</td>
+                        <td className="px-5 py-4 align-top border-b border-r border-black/10 text-sm text-black/80 leading-relaxed">{row.problem}</td>
+                        <td className="px-5 py-4 align-top border-b border-r border-black/10 text-sm text-black/80 leading-relaxed">{row.aiApproach}</td>
+                        <td className="px-5 py-4 align-top border-b border-r border-black/10 text-sm text-black/80 leading-relaxed">{row.impact}</td>
+                        <td className="px-5 py-4 align-top border-b border-black/10 text-sm text-black/80">{row.owner}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-[#fffef8]">
+                      <td className="px-5 py-5 align-top border-b border-r border-black/10 text-sm text-black/50 italic">Your next idea...</td>
+                      <td className="px-5 py-5 align-top border-b border-r border-black/10 text-sm text-black/50 italic">Describe the challenge.</td>
+                      <td className="px-5 py-5 align-top border-b border-r border-black/10 text-sm text-black/50 italic">Outline your AI method.</td>
+                      <td className="px-5 py-5 align-top border-b border-r border-black/10 text-sm text-black/50 italic">Define measurable value.</td>
+                      <td className="px-5 py-5 align-top border-b border-black/10 text-sm text-black/50 italic">Assign ownership.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Fifth Section: Submit Your Project */} 
+        <div className="mt-32">
+          <div className="relative overflow-hidden rounded-[2.5rem] border border-black/10 bg-[linear-gradient(145deg,#081220_0%,#0e1f38_55%,#17345f_100%)] p-8 md:p-12 shadow-[0_30px_70px_rgba(2,6,23,0.4)]">
+            <div className="absolute -top-24 -left-20 h-72 w-72 rounded-full bg-emerald-300/10 blur-3xl" />
+            <div className="absolute -bottom-20 right-8 h-72 w-72 rounded-full bg-sky-300/10 blur-3xl" />
+
+            <div className="relative z-10 mb-10">
+              <span className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-white/15 text-white text-xs font-bold uppercase tracking-widest mb-4">
+                <span>005</span>
+                <span>Project Submission Hub</span>
+              </span>
+              <h2 className="text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
+                Send your idea, website, or deployed app.
+              </h2>
+              <p className="text-white/75 text-base md:text-lg max-w-3xl leading-relaxed">
+                Share your project through this section. Paste your live link or prototype URL, describe your goal, and we will help design the right AI data and model strategy.
+              </p>
+            </div>
+
+            <div className="relative z-10 grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+              <div className="xl:col-span-7">
+                <div className="rounded-[2rem] bg-white p-6 md:p-8 border border-black/10">
+                  <div className="mb-6">
+                    <h3 className="text-2xl font-bold text-black">Submit Your Project</h3>
+                    <p className="text-sm text-black/60 mt-1">We review submissions and reply with a discovery plan.</p>
+                  </div>
+
+                  <form action="#/contact" encType="multipart/form-data" className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Project Name</span>
+                      <input type="text" placeholder="Example: Smart Ops Assistant" className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40" />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Company / Team</span>
+                      <input type="text" placeholder="Your company or team" className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40" />
+                    </label>
+                    <label className="block md:col-span-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Project Link (Web / App / Demo)</span>
+                      <input type="url" placeholder="https://yourapp.com" className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40" />
+                    </label>
+                    <label className="block md:col-span-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Video / File Link (Drive, YouTube, Dropbox)</span>
+                      <input type="url" placeholder="https://drive.google.com/... or https://youtube.com/..." className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40" />
+                    </label>
+                    <label className="block md:col-span-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Upload Video or File</span>
+                      <div className="mt-2 rounded-xl border border-dashed border-black/20 bg-black/[0.02] px-4 py-3">
+                        <input
+                          type="file"
+                          accept="video/*,.pdf,.doc,.docx,.ppt,.pptx,.zip"
+                          className="w-full text-sm text-black/75 file:mr-4 file:rounded-full file:border-0 file:bg-black file:px-4 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-black/85"
+                        />
+                        <p className="mt-2 text-xs text-black/50">Accepted formats: MP4, MOV, PDF, DOC, PPT, ZIP.</p>
+                      </div>
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Current Stage</span>
+                      <select className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40">
+                        <option>Concept</option>
+                        <option>Prototype</option>
+                        <option>Beta</option>
+                        <option>Live Product</option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Main AI Need</span>
+                      <select className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40">
+                        <option>Data Collection</option>
+                        <option>Annotation</option>
+                        <option>NLP / Speech</option>
+                        <option>Computer Vision</option>
+                      </select>
+                    </label>
+                    <label className="block md:col-span-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Idea Summary</span>
+                      <textarea rows={4} placeholder="What problem are you solving and what result do you want?" className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-lw-green/40" />
+                    </label>
+                    <div className="md:col-span-2 flex flex-wrap gap-3 pt-2">
+                      <button type="submit" className="px-7 py-3 rounded-full bg-lw-green-deep text-white text-sm font-bold transition-all hover:-translate-y-0.5 hover:bg-lw-green">
+                        Send Idea
+                      </button>
+                      <a href="#/contact" className="px-7 py-3 rounded-full bg-black text-white text-sm font-bold no-underline transition-all hover:-translate-y-0.5 hover:bg-black/85">
+                        Book Consultation
+                      </a>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+              <div className="xl:col-span-5">
+                <div className="rounded-[2rem] border border-white/20 bg-white/10 backdrop-blur-sm p-6">
+                  <h3 className="text-2xl font-bold text-white mb-2">Live Project Board</h3>
+                  <p className="text-white/70 text-sm mb-5">A quick frame for sharing references and active links.</p>
+
+                  <div className="overflow-x-auto rounded-2xl border border-white/15">
+                    <table className="w-full min-w-[540px] border-collapse text-xs text-white">
+                      <thead>
+                        <tr className="bg-white/10 text-left">
+                          <th className="px-4 py-3 uppercase tracking-widest border-b border-white/15">Project</th>
+                          <th className="px-4 py-3 uppercase tracking-widest border-b border-white/15">URL</th>
+                          <th className="px-4 py-3 uppercase tracking-widest border-b border-white/15">Stage</th>
+                          <th className="px-4 py-3 uppercase tracking-widest border-b border-white/15">Focus</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {submissionRows.map((row, idx) => (
+                          <tr key={row.name} className={idx % 2 === 0 ? 'bg-white/5' : 'bg-white/[0.03]'}>
+                            <td className="px-4 py-3 border-b border-white/10">{row.name}</td>
+                            <td className="px-4 py-3 border-b border-white/10 text-sky-200">{row.link}</td>
+                            <td className="px-4 py-3 border-b border-white/10">{row.stage}</td>
+                            <td className="px-4 py-3 border-b border-white/10">{row.focus}</td>
+                          </tr>
+                        ))}
+                        <tr className="bg-white/[0.03]">
+                          <td className="px-4 py-3 italic text-white/60">Your project</td>
+                          <td className="px-4 py-3 italic text-white/60">Paste your deployed link</td>
+                          <td className="px-4 py-3 italic text-white/60">Concept</td>
+                          <td className="px-4 py-3 italic text-white/60">Your AI use case</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-5 rounded-xl border border-white/15 bg-white/10 px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-widest text-white/60 mb-1">Pro Tip</p>
+                    <p className="text-sm text-white/85">The best submissions include one link and one measurable success metric.</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
