@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 import { countries, languages, timeZones } from './profileData';
@@ -16,18 +16,29 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose, profil
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  const [formData, setFormData] = useState({
-    fullName: profile?.full_name || '',
-    nickName: profile?.nick_name || '',
-    phone: profile?.phone || '',
-    gender: profile?.gender || 'Male',
-    country: profile?.country || 'Philippines',
-    language: profile?.language || 'English',
-    timeZone: profile?.time_zone || 'Asia/Taipei',
-    avatarUrl: profile?.avatar_url || ''
+
+  const buildFormData = (sourceProfile: any) => ({
+    fullName: sourceProfile?.full_name || '',
+    nickName: sourceProfile?.nick_name || '',
+    phone: sourceProfile?.phone || '',
+    gender: sourceProfile?.gender || 'Male',
+    country: sourceProfile?.country || 'Philippines',
+    language: sourceProfile?.language || 'English',
+    timeZone: sourceProfile?.time_zone || 'Asia/Taipei',
+    avatarUrl: sourceProfile?.avatar_url || '',
   });
+
+  const [formData, setFormData] = useState(buildFormData(profile));
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormData(buildFormData(profile));
+    setError(null);
+    setSuccess(null);
+    setIsEditing(false);
+  }, [isOpen, profile]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -37,9 +48,20 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose, profil
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (!file.type.startsWith('image/')) {
+        setError('Please upload an image file.');
+        return;
+      }
+
+      if (file.size > 2 * 1024 * 1024) {
+        setError('Image must be 2MB or smaller.');
+        return;
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setFormData(prev => ({ ...prev, avatarUrl: reader.result as string }));
+        setError(null);
       };
       reader.readAsDataURL(file);
     }
@@ -47,6 +69,8 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose, profil
 
   const handleSave = async () => {
     setLoading(true);
+    setError(null);
+    setSuccess(null);
     try {
       const { error } = await supabase
         .from('profiles')
@@ -66,7 +90,7 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose, profil
       if (error) throw error;
       
       setIsEditing(false);
-      setError(null);
+      setSuccess('Profile updated successfully.');
       if (onUpdate) onUpdate();
     } catch (err: any) {
       console.error('Error updating profile:', err.message);
@@ -153,6 +177,11 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose, profil
               {error}
             </div>
           )}
+          {success && (
+            <div className="bg-green-50 border border-green-200 text-green-600 p-4 rounded-xl mb-6 text-sm">
+              {success}
+            </div>
+          )}
 
           {/* Form Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-8 mb-12">
@@ -213,7 +242,7 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose, profil
                     name="gender"
                     value={formData.gender}
                     onChange={handleChange}
-                    className={`w-full px-5 py-3.5 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all appearance-none ${
+                    className={`w-full pl-5 pr-14 py-3.5 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all appearance-none ${
                       darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-green-200 text-gray-700'
                     }`}
                   >
@@ -226,12 +255,12 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose, profil
                     type="text"
                     readOnly
                     value={formData.gender}
-                    className={`w-full px-5 py-3.5 border rounded-2xl focus:outline-none appearance-none ${
+                    className={`w-full pl-5 pr-14 py-3.5 border rounded-2xl focus:outline-none appearance-none ${
                       darkMode ? 'bg-slate-900 border-slate-800 text-slate-500' : 'bg-gray-50 border-gray-100 text-gray-500'
                     }`}
                   />
                 )}
-                <div className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                <div className="absolute inset-y-0 right-5 flex items-center text-gray-400 pointer-events-none">
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
                 </div>
               </div>
@@ -244,7 +273,7 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose, profil
                     name="country"
                     value={formData.country}
                     onChange={handleChange}
-                    className={`w-full px-5 py-3.5 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all appearance-none cursor-pointer ${
+                    className={`w-full pl-5 pr-14 py-3.5 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all appearance-none cursor-pointer ${
                       darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-green-200 text-gray-700'
                     }`}
                   >
@@ -257,12 +286,12 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose, profil
                     type="text"
                     readOnly
                     value={formData.country}
-                    className={`w-full px-5 py-3.5 border rounded-2xl focus:outline-none appearance-none ${
+                    className={`w-full pl-5 pr-14 py-3.5 border rounded-2xl focus:outline-none appearance-none ${
                       darkMode ? 'bg-slate-900 border-slate-800 text-slate-500' : 'bg-gray-50 border-gray-100 text-gray-500'
                     }`}
                   />
                 )}
-                <div className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                <div className="absolute inset-y-0 right-5 flex items-center text-gray-400 pointer-events-none">
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
                 </div>
               </div>
@@ -276,7 +305,7 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose, profil
                     name="language"
                     value={formData.language}
                     onChange={handleChange}
-                    className={`w-full px-5 py-3.5 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all appearance-none cursor-pointer ${
+                    className={`w-full pl-5 pr-14 py-3.5 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all appearance-none cursor-pointer ${
                       darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-green-200 text-gray-700'
                     }`}
                   >
@@ -289,12 +318,12 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose, profil
                     type="text"
                     readOnly
                     value={formData.language}
-                    className={`w-full px-5 py-3.5 border rounded-2xl focus:outline-none appearance-none ${
+                    className={`w-full pl-5 pr-14 py-3.5 border rounded-2xl focus:outline-none appearance-none ${
                       darkMode ? 'bg-slate-900 border-slate-800 text-slate-500' : 'bg-gray-50 border-gray-100 text-gray-500'
                     }`}
                   />
                 )}
-                <div className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                <div className="absolute inset-y-0 right-5 flex items-center text-gray-400 pointer-events-none">
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
                 </div>
               </div>
@@ -307,7 +336,7 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose, profil
                     name="timeZone"
                     value={formData.timeZone}
                     onChange={handleChange}
-                    className={`w-full px-5 py-3.5 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all appearance-none cursor-pointer ${
+                    className={`w-full pl-5 pr-14 py-3.5 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all appearance-none cursor-pointer ${
                       darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-green-200 text-gray-700'
                     }`}
                   >
@@ -320,12 +349,12 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({ isOpen, onClose, profil
                     type="text"
                     readOnly
                     value={timeZones.find(tz => tz.value === formData.timeZone)?.label || formData.timeZone}
-                    className={`w-full px-5 py-3.5 border rounded-2xl focus:outline-none appearance-none ${
+                    className={`w-full pl-5 pr-14 py-3.5 border rounded-2xl focus:outline-none appearance-none ${
                       darkMode ? 'bg-slate-900 border-slate-800 text-slate-500' : 'bg-gray-50 border-gray-100 text-gray-500'
                     }`}
                   />
                 )}
-                <div className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                <div className="absolute inset-y-0 right-5 flex items-center text-gray-400 pointer-events-none">
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
                 </div>
               </div>

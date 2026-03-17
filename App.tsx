@@ -27,10 +27,13 @@ import CookieSettingsModal from './components/CookieSettingsModal';
 import HelpWidget from './components/HelpWidget';
 import { useAuth } from './context/AuthContext';
 
+const ADMIN_EMAIL = 'damayojholmer@gmail.com';
+
 const App: React.FC = () => {
-  const { user, isApproved, loading: authLoading } = useAuth();
+  const { user, isApproved, isAdmin, loading: authLoading } = useAuth();
   // Get the current hash, defaulting to '/' for routing purposes
   const getCurrentRoute = () => window.location.hash.substring(1) || '/';
+  const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
   const [route, setRoute] = useState(getCurrentRoute());
   const [showCookieSettings, setShowCookieSettings] = useState(false);
 
@@ -64,7 +67,7 @@ const App: React.FC = () => {
     };
   }, []);
 
-  if (authLoading) {
+  if (authLoading && route !== '/signin' && !isLocalhost) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center text-white">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#4ade80]"></div>
@@ -124,8 +127,9 @@ const App: React.FC = () => {
       currentPage = <SignIn />;
       break;
     case '/admin':
-      // Restrict admin access to specific email
-      if (user?.email === 'damayojholmer@gmail.com') {
+      if (!user) {
+        currentPage = <SignIn />;
+      } else if ((user.email || '').trim().toLowerCase() === ADMIN_EMAIL || isAdmin) {
         currentPage = <Admin />;
       } else if (user && !isApproved) {
         currentPage = <PendingApproval />;
@@ -134,7 +138,11 @@ const App: React.FC = () => {
       }
       break;
     case '/user':
-      if (user && !isApproved) {
+      if (!user) {
+        currentPage = <SignIn />;
+      } else if ((user.email || '').trim().toLowerCase() === ADMIN_EMAIL || isAdmin) {
+        currentPage = <Admin />;
+      } else if (!isApproved) {
         currentPage = <PendingApproval />;
       } else {
         currentPage = <User />;

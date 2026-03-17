@@ -7,6 +7,7 @@ interface AuthContextType {
   user: User | null;
   profile: any | null;
   isApproved: boolean;
+  isAdmin: boolean;
   loading: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -19,26 +20,68 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<any | null>(null);
   const [isApproved, setIsApproved] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-    
-    if (!error && data) {
-      setProfile(data);
-      setIsApproved(data.is_approved);
-    } else {
+  const withTimeout = async <T,>(promise: Promise<T> | PromiseLike<T>, ms: number, message: string): Promise<T> => {
+    return Promise.race([
+      Promise.resolve(promise),
+      new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+    ]);
+  };
+
+  const ensureProfile = async () => {
+    try {
+      const { error } = await withTimeout<{ error: any }>(
+        supabase.rpc('ensure_my_profile') as any,
+        5000,
+        'Ensure profile timeout'
+      );
+
+      if (error) {
+        // Non-fatal: some environments may not have the RPC yet.
+        console.warn('ensure_my_profile RPC failed:', error);
+      }
+    } catch (err) {
+      // Non-fatal safety fallback.
+      console.warn('ensure_my_profile RPC unavailable or timed out:', err);
+    }
+  };
+
+  const fetchProfile = async (userId: string, timeoutMs = 8000) => {
+    try {
+      const { data, error } = await withTimeout<{ data: any; error: any }>(
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle() as any,
+        timeoutMs,
+        'Profile fetch timeout'
+      );
+
+      if (error) throw error;
+
+      if (data) {
+        setProfile(data);
+        setIsApproved(Boolean(data.is_approved));
+        setIsAdmin((data.role || '').toLowerCase() === 'admin');
+      } else {
+        setProfile(null);
+        setIsApproved(false);
+        setIsAdmin(false);
+      }
+    } catch (err) {
+      console.warn('Profile fetch failed or timed out:', err);
       setProfile(null);
       setIsApproved(false);
+      setIsAdmin(false);
     }
   };
 
   const refreshProfile = async () => {
     if (user) {
+      await ensureProfile();
       await fetchProfile(user.id);
     }
   };
@@ -48,13 +91,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const initializeAuth = async () => {
       try {
-        // Get initial session with a longer timeout safety (20s)
-        const sessionPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Session fetch timeout')), 20000)
-        );
-
-        const result = await Promise.race([sessionPromise, timeoutPromise]) as any;
+        // Get initial session with timeout safety
+        const result = await withTimeout(
+          supabase.auth.getSession(),
+          20000,
+          'Session fetch timeout'
+        ) as any;
         const session = result?.data?.session ?? null;
         
         if (!mounted) return;
@@ -64,17 +106,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(currentUser);
         
         if (currentUser) {
-          try {
-            // Fetch profile with a shorter timeout so it doesn't block app boot
-            const profilePromise = fetchProfile(currentUser.id);
-            const profileTimeout = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Profile fetch timeout')), 5000)
-            );
-            await Promise.race([profilePromise, profileTimeout]);
-          } catch (profileErr) {
-            console.warn('Profile fetch issue during init:', profileErr);
-            // We don't rethrow here, so finally block runs and app boots
-          }
+          await ensureProfile();
+          await fetchProfile(currentUser.id, 5000);
         }
       } catch (err) {
         // Use warn instead of error for timeout as we have a fallback listener
@@ -103,20 +136,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(currentUser);
       
       if (currentUser) {
-        // Only show loading if we don't have a profile yet or if it's a significant change
-        if (!profile || profile.id !== currentUser.id) {
-          setLoading(true);
-          try {
-            await fetchProfile(currentUser.id);
-          } catch (err) {
-            console.error('Error fetching profile on auth change:', err);
-          } finally {
-            if (mounted) setLoading(false);
-          }
+        setLoading(true);
+        try {
+          await ensureProfile();
+          await fetchProfile(currentUser.id, 5000);
+        } catch (err) {
+          console.error('Error fetching profile on auth change:', err);
+        } finally {
+          if (mounted) setLoading(false);
         }
       } else {
         setProfile(null);
         setIsApproved(false);
+        setIsAdmin(false);
         setLoading(false);
       }
     });
@@ -132,7 +164,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, profile, isApproved, loading, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ session, user, profile, isApproved, isAdmin, loading, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

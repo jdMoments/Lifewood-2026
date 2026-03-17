@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -8,17 +8,51 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import ProfileSidebar from './ProfileSidebar';
 
+const ADMIN_EMAILS = ['damayojholmer@gmail.com', 'jholmerdamayo@gmail.com'];
+
+const isMissingDeclinedColumnError = (error: any) => {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return message.includes('is_declined') && message.includes('does not exist');
+};
+
+const isMissingEvaluationColumnError = (error: any) => {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return message.includes('does not exist') && (message.includes('evaluation_comment') || message.includes('evaluation_result') || message.includes('last_evaluated_at'));
+};
+
+const getNormalizedRole = (profile: any) => (profile?.role || '').toString().trim().toLowerCase();
+
+const getFirstName = (profile: any) => {
+  const fullName = (profile?.full_name || '').toString().trim();
+  if (fullName) return fullName.split(/\s+/)[0];
+  const emailLocal = ((profile?.email || '').toString().split('@')[0] || '').trim();
+  if (emailLocal) return emailLocal.split(/[._-]/)[0];
+  return 'User';
+};
+
+const isInternLikeRole = (role: string) => role === 'intern' || role === 'user';
+
+const isEmployeeLikeRole = (role: string) => role === 'employee' || role === 'admin';
+
+const isOfficialMemberProfile = (profile: any) => {
+  const role = getNormalizedRole(profile);
+  return profile?.is_approved === true && (isInternLikeRole(role) || isEmployeeLikeRole(role));
+};
+
+const isPendingProfile = (profile: any) => {
+  const email = (profile?.email || '').toLowerCase();
+  const role = getNormalizedRole(profile);
+  const isApproved = profile?.is_approved === true;
+  const isDeclined = profile?.is_declined === true;
+
+  return !isApproved && !isDeclined && role !== 'admin' && !ADMIN_EMAILS.includes(email);
+};
+
 const Admin: React.FC = () => {
   const { user, loading: authLoading, signOut: authSignOut } = useAuth();
   const [profile, setProfile] = useState<any>(null);
-  const [allProfiles, setAllProfiles] = useState<any[]>([
-    { id: 's1', full_name: 'Marcus Thorne', email: 'marcus@lifewood.com', role: 'employee', country: 'USA', created_at: '2024-01-15T10:00:00Z', efficiency: 95, level: 4, grade: 'A' },
-    { id: 's2', full_name: 'Elena Petrova', email: 'elena@lifewood.com', role: 'employee', country: 'Bulgaria', created_at: '2023-11-20T14:30:00Z', efficiency: 92, level: 5, grade: 'A+' },
-    { id: 's3', full_name: 'David Okafor', email: 'david@lifewood.com', role: 'employee', country: 'Nigeria', created_at: '2024-02-05T09:15:00Z', efficiency: 89, level: 3, grade: 'B+' },
-    { id: 's4', full_name: 'Lina Schmidt', email: 'lina@lifewood.com', role: 'intern', country: 'Germany', created_at: '2024-03-01T11:00:00Z', efficiency: 88, level: 2, grade: 'B+' },
-    { id: 's5', full_name: 'Kenji Sato', email: 'kenji@lifewood.com', role: 'intern', country: 'Japan', created_at: '2024-03-10T08:45:00Z', efficiency: 72, level: 1, grade: 'B' },
-    { id: 's6', full_name: 'Sofia Rossi', email: 'sofia@lifewood.com', role: 'intern', country: 'Italy', created_at: '2024-03-12T16:20:00Z', efficiency: 78, level: 1, grade: 'B-' }
-  ]);
+  const [allProfiles, setAllProfiles] = useState<any[]>([]);
+  const [pendingProfiles, setPendingProfiles] = useState<any[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [newGoalTitle, setNewGoalTitle] = useState('');
@@ -31,13 +65,18 @@ const Admin: React.FC = () => {
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
-  const [applications, setApplications] = useState<any[]>([
-    { id: 'a1', first_name: 'Alex', last_name: 'Rivera', email: 'alex.rivera@example.com', project_applied: 'AI Model Training', created_at: '2024-03-14T10:00:00Z', status: 'pending', phone: '+1234567890', portfolio_url: 'https://example.com/alex', cv_url: 'https://example.com/cv/alex.pdf' },
-    { id: 'a2', first_name: 'Sam', last_name: 'Chen', email: 'sam.chen@example.com', project_applied: 'Data Annotation', created_at: '2024-03-13T14:30:00Z', status: 'accepted', phone: '+0987654321', portfolio_url: 'https://example.com/sam', cv_url: 'https://example.com/cv/sam.pdf' },
-    { id: 'a3', first_name: 'Jordan', last_name: 'Lee', email: 'jordan.lee@example.com', project_applied: 'Quality Assurance', created_at: '2024-03-12T09:15:00Z', status: 'declined', phone: '+1122334455', portfolio_url: 'https://example.com/jordan', cv_url: 'https://example.com/cv/jordan.pdf' }
-  ]);
+  const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
+  const [applications, setApplications] = useState<any[]>([]);
   const [selectedApplicant, setSelectedApplicant] = useState<any>(null);
   const [darkMode, setDarkMode] = useState(false);
+  const [actioningUserId, setActioningUserId] = useState<string | null>(null);
+  const [evaluationRoleFilter, setEvaluationRoleFilter] = useState<'intern' | 'employee'>('intern');
+  const [selectedEvaluationUserId, setSelectedEvaluationUserId] = useState('');
+  const [evaluationDecision, setEvaluationDecision] = useState<'pass' | 'fail' | 'pending'>('pending');
+  const [evaluationComment, setEvaluationComment] = useState('');
+  const [evaluationNotice, setEvaluationNotice] = useState('');
+  const [isSavingEvaluation, setIsSavingEvaluation] = useState(false);
+  const roleDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const userGrowthData = [
     { name: 'Jan', users: 40 },
@@ -64,6 +103,16 @@ const Admin: React.FC = () => {
 
   const COLORS = ['#10b981', '#1a2e1a', '#e5e7eb'];
 
+  const formatPendingProfileCode = (index: number) => String(index + 1);
+
+  const formatManageProfileCode = (profile: any, index: number, group: 'intern' | 'employee') => {
+    const code = (profile?.profile_code || '').toString().toUpperCase();
+    const prefix = group === 'employee' ? 'EMP' : 'PH';
+    const pattern = group === 'employee' ? /^EMP\d+$/ : /^PH\d+$/;
+    if (pattern.test(code)) return code;
+    return `${prefix}${String(index + 1).padStart(4, '0')}`;
+  };
+
   useEffect(() => {
     // Safety timeout: if loading is still true after 10 seconds, force it to false
     const timeout = setTimeout(() => {
@@ -86,6 +135,7 @@ const Admin: React.FC = () => {
       fetchProfile(user.id);
       fetchGoals(user.id);
       fetchAllProfiles();
+      fetchPendingApprovals();
       fetchApplications();
     }
   }, [user, authLoading]);
@@ -98,67 +148,307 @@ const Admin: React.FC = () => {
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      
-      const sampleApps = [
-        { id: 'a1', first_name: 'Alex', last_name: 'Rivera', email: 'alex.rivera@example.com', project_applied: 'AI Model Training', created_at: '2024-03-14T10:00:00Z', status: 'pending', phone: '+1234567890', portfolio_url: 'https://example.com/alex', cv_url: 'https://example.com/cv/alex.pdf' },
-        { id: 'a2', first_name: 'Sam', last_name: 'Chen', email: 'sam.chen@example.com', project_applied: 'Data Annotation', created_at: '2024-03-13T14:30:00Z', status: 'accepted', phone: '+0987654321', portfolio_url: 'https://example.com/sam', cv_url: 'https://example.com/cv/sam.pdf' },
-        { id: 'a3', first_name: 'Jordan', last_name: 'Lee', email: 'jordan.lee@example.com', project_applied: 'Quality Assurance', created_at: '2024-03-12T09:15:00Z', status: 'declined', phone: '+1122334455', portfolio_url: 'https://example.com/jordan', cv_url: 'https://example.com/cv/jordan.pdf' }
-      ];
-      
-      setApplications([...sampleApps, ...(data || [])]);
+
+      setApplications(data || []);
     } catch (error) {
       console.error('Error fetching applications:', error);
     }
   };
 
-  const handleApproveUser = async (userId: string) => {
-    const { error } = await supabase
+  const resolveApprovedRole = (role?: string) => {
+    const normalized = (role || '').toString().trim().toLowerCase();
+    if (normalized === 'employee' || normalized === 'employees') return 'employee';
+    if (normalized === 'intern' || normalized === 'interns' || normalized === 'user') return 'intern';
+    return 'intern';
+  };
+
+  const getEvaluationCandidates = () =>
+    allProfiles
+      .filter((p) => {
+        const role = (p?.role || '').toLowerCase();
+        if (evaluationRoleFilter === 'intern') {
+          return role === 'intern' || role === 'user';
+        }
+        return role === 'employee' || role === 'admin';
+      })
+      .sort((a, b) => (a?.full_name || '').localeCompare(b?.full_name || ''));
+
+  const getAiInsight = (targetUser: any) => {
+    const completion = Math.max(0, Math.min(100, Number(targetUser?.completion || 0)));
+    const efficiency = Math.max(0, Math.min(100, Number(targetUser?.efficiency || 0)));
+    const level = Math.max(1, Number(targetUser?.level || 1));
+    const hoursSpent = Math.max(0, Number(targetUser?.hours_spent || 0));
+
+    const score = Math.round(
+      completion * 0.45 +
+      efficiency * 0.45 +
+      Math.min(level * 5, 10) +
+      Math.min(hoursSpent / 10, 10)
+    );
+
+    if (score >= 80) {
+      return {
+        score,
+        title: 'Doing very well',
+        detail: 'Strong completion and efficiency trends. Candidate is ready for advanced tasks.',
+      };
+    }
+    if (score >= 60) {
+      return {
+        score,
+        title: 'Doing well',
+        detail: 'Progress is steady, but focused coaching can improve consistency.',
+      };
+    }
+    if (score >= 40) {
+      return {
+        score,
+        title: 'Needs support',
+        detail: 'Performance is below target. Recommend structured mentoring and weekly checkpoints.',
+      };
+    }
+    return {
+      score,
+      title: 'At risk',
+      detail: 'Low progress indicators. Immediate intervention and clear action plan are recommended.',
+    };
+  };
+
+  const handleApproveUser = async (pendingUser: any) => {
+    const approvedRole = resolveApprovedRole(pendingUser.role);
+    setActioningUserId(pendingUser.id);
+    let { error } = await supabase
       .from('profiles')
-      .update({ role: 'intern' })
-      .eq('id', userId);
+      .update({ 
+        role: approvedRole,
+        is_approved: true,
+        is_declined: false,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', pendingUser.id);
+
+    if (error && isMissingDeclinedColumnError(error)) {
+      const fallback = await supabase
+        .from('profiles')
+        .update({
+          role: approvedRole,
+          is_approved: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', pendingUser.id);
+      error = fallback.error;
+    }
     
     if (!error) {
-      fetchAllProfiles();
+      setAllProfiles((prevProfiles) => prevProfiles.map((p) => (
+        p.id === pendingUser.id
+          ? { ...p, role: approvedRole, is_approved: true }
+          : p
+      )));
+      setPendingProfiles((prevPending) => prevPending.filter((p) => p.id !== pendingUser.id));
+      setActioningUserId(null);
+      return;
     }
+
+    console.error('Error approving user:', error);
+    setActioningUserId(null);
   };
 
   const handleDeclineUser = async (userId: string) => {
-    if (!confirm('Are you sure you want to decline this user? This will remove their profile.')) return;
+    if (!confirm('Are you sure you want to delete this pending request?')) return;
+    setActioningUserId(userId);
     
-    const { error } = await supabase
+    let { error } = await supabase
       .from('profiles')
-      .delete()
+      .update({
+        is_declined: true,
+        is_approved: false,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', userId);
+
+    if (error && isMissingDeclinedColumnError(error)) {
+      const fallback = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
+      error = fallback.error;
+    }
     
     if (!error) {
-      fetchAllProfiles();
+      setAllProfiles((prevProfiles) => prevProfiles.filter((p) => p.id !== userId));
+      setPendingProfiles((prevPending) => prevPending.filter((p) => p.id !== userId));
+      setActioningUserId(null);
+      return;
     }
+
+    console.error('Error declining user:', error);
+    setActioningUserId(null);
   };
 
   const fetchAllProfiles = async () => {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
-        .order('role', { ascending: false })
-        .order('full_name', { ascending: true });
+        .select('*');
       
       if (error) throw error;
-      
-      const sampleProfiles = [
-        { id: 's1', full_name: 'Marcus Thorne', email: 'marcus@lifewood.com', role: 'employee', country: 'USA', created_at: '2024-01-15T10:00:00Z', efficiency: 95, level: 4, grade: 'A' },
-        { id: 's2', full_name: 'Elena Petrova', email: 'elena@lifewood.com', role: 'employee', country: 'Bulgaria', created_at: '2023-11-20T14:30:00Z', efficiency: 92, level: 5, grade: 'A+' },
-        { id: 's3', full_name: 'David Okafor', email: 'david@lifewood.com', role: 'employee', country: 'Nigeria', created_at: '2024-02-05T09:15:00Z', efficiency: 89, level: 3, grade: 'B+' },
-        { id: 's4', full_name: 'Lina Schmidt', email: 'lina@lifewood.com', role: 'intern', country: 'Germany', created_at: '2024-03-01T11:00:00Z', efficiency: 88, level: 2, grade: 'B+' },
-        { id: 's5', full_name: 'Kenji Sato', email: 'kenji@lifewood.com', role: 'intern', country: 'Japan', created_at: '2024-03-10T08:45:00Z', efficiency: 72, level: 1, grade: 'B' },
-        { id: 's6', full_name: 'Sofia Rossi', email: 'sofia@lifewood.com', role: 'intern', country: 'Italy', created_at: '2024-03-12T16:20:00Z', efficiency: 78, level: 1, grade: 'B-' }
-      ];
 
-      setAllProfiles([...sampleProfiles, ...(data || [])]);
+      const sortedProfiles = [...(data || [])].sort((a, b) => {
+        const aTime = new Date(a?.created_at || a?.updated_at || 0).getTime();
+        const bTime = new Date(b?.created_at || b?.updated_at || 0).getTime();
+        return bTime - aTime;
+      });
+
+      setAllProfiles(sortedProfiles);
     } catch (error) {
       console.error('Error fetching profiles:', error);
     }
   };
+
+  const fetchPendingApprovals = async () => {
+    try {
+      let { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .neq('is_declined', true)
+        .or('is_approved.eq.false,is_approved.is.null');
+
+      if (error && isMissingDeclinedColumnError(error)) {
+        const fallback = await supabase
+          .from('profiles')
+          .select('*')
+          .or('is_approved.eq.false,is_approved.is.null');
+        data = fallback.data as any;
+        error = fallback.error;
+      }
+
+      if (error) throw error;
+
+      let pendingData = data || [];
+
+      // Fallback: if filtered query returns nothing, fetch all and filter locally.
+      if (pendingData.length === 0) {
+        let { data: allData, error: allError } = await supabase
+          .from('profiles')
+          .select('*');
+
+        if (allError && isMissingDeclinedColumnError(allError)) {
+          const fallback = await supabase
+            .from('profiles')
+            .select('*');
+          allData = fallback.data as any;
+          allError = fallback.error;
+        }
+
+        if (!allError) {
+          pendingData = allData || [];
+        }
+      }
+
+      const sortedPending = pendingData
+        .filter(isPendingProfile)
+        .sort((a, b) => {
+          const aTime = new Date(a?.created_at || a?.updated_at || 0).getTime();
+          const bTime = new Date(b?.created_at || b?.updated_at || 0).getTime();
+          return aTime - bTime;
+        });
+
+      setPendingProfiles(sortedPending);
+    } catch (error) {
+      console.error('Error fetching pending approvals:', error);
+    }
+  };
+
+  const refreshUsersData = async () => {
+    await Promise.allSettled([fetchAllProfiles(), fetchPendingApprovals()]);
+  };
+
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('admin-profiles-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        () => {
+          refreshUsersData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'applications' },
+        () => {
+          fetchApplications();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (activeTab === 'Manage Users') {
+      fetchPendingApprovals();
+    }
+    if (activeTab === 'Applicants') {
+      fetchApplications();
+    }
+    if (activeTab === 'Evaluation') {
+      fetchAllProfiles();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const candidates = getEvaluationCandidates();
+
+    if (candidates.length === 0) {
+      setSelectedEvaluationUserId('');
+      return;
+    }
+
+    if (!candidates.some((candidate) => candidate.id === selectedEvaluationUserId)) {
+      setSelectedEvaluationUserId(candidates[0].id);
+    }
+  }, [evaluationRoleFilter, allProfiles, selectedEvaluationUserId]);
+
+  useEffect(() => {
+    if (!selectedEvaluationUserId) {
+      setEvaluationDecision('pending');
+      setEvaluationComment('');
+      return;
+    }
+
+    const selectedProfile = allProfiles.find((p) => p.id === selectedEvaluationUserId);
+    const storedResult = (selectedProfile?.evaluation_result || '').toLowerCase();
+    const gradeValue = (selectedProfile?.grade || '').toLowerCase();
+    const inferredDecision: 'pass' | 'fail' | 'pending' =
+      storedResult === 'pass' || storedResult === 'fail'
+        ? storedResult
+        : gradeValue === 'pass'
+          ? 'pass'
+          : gradeValue === 'fail'
+            ? 'fail'
+            : 'pending';
+
+    setEvaluationDecision(inferredDecision);
+    setEvaluationComment(selectedProfile?.evaluation_comment || '');
+    setEvaluationNotice('');
+  }, [selectedEvaluationUserId, allProfiles]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (roleDropdownRef.current && !roleDropdownRef.current.contains(event.target as Node)) {
+        setIsRoleDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
 
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -292,53 +582,9 @@ const Admin: React.FC = () => {
     );
   };
 
-  if (authLoading || (loading && user)) {
-    return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center">
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="relative flex flex-col items-center"
-        >
-          {/* Logo/Icon */}
-          <div className="w-20 h-20 rounded-3xl bg-emerald-600 flex items-center justify-center text-white text-4xl font-bold mb-8 shadow-2xl shadow-emerald-200 animate-pulse">
-            ⚡
-          </div>
-          
-          {/* Spinner */}
-          <div className="absolute -bottom-2">
-            <div className="w-24 h-1 bg-gray-100 rounded-full overflow-hidden">
-              <motion.div 
-                initial={{ x: '-100%' }}
-                animate={{ x: '100%' }}
-                transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
-                className="w-1/2 h-full bg-emerald-600"
-              />
-            </div>
-          </div>
-
-          <div className="mt-8 text-center">
-            <h2 className="text-xl font-bold text-emerald-900 mb-2">Lifewood Hub</h2>
-            <p className="text-sm text-emerald-600/60 font-medium animate-pulse">Initializing Admin Dashboard...</p>
-          </div>
-        </motion.div>
-
-        {/* Safety button if stuck */}
-        <motion.button
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 5 }}
-          onClick={() => setLoading(false)}
-          className="mt-12 text-xs text-gray-400 hover:text-emerald-600 transition-colors underline underline-offset-4"
-        >
-          Taking too long? Click here to bypass
-        </motion.button>
-      </div>
-    );
-  }
+  if (authLoading) return null;
 
   if (!user) return null;
-
   const handleUpdateApplicationStatus = async (id: string, status: 'accepted' | 'declined') => {
     try {
       const { error } = await supabase
@@ -348,10 +594,90 @@ const Admin: React.FC = () => {
       
       if (error) throw error;
       
-      setApplications(applications.map(app => app.id === id ? { ...app, status } : app));
+      setApplications((prev) => prev.map((app) => app.id === id ? { ...app, status } : app));
       setSelectedApplicant(null);
     } catch (error) {
       console.error('Error updating application status:', error);
+    }
+  };
+
+  const evaluationCandidates = getEvaluationCandidates();
+  const selectedEvaluationUser =
+    evaluationCandidates.find((candidate) => candidate.id === selectedEvaluationUserId) || null;
+  const evaluationInsight = selectedEvaluationUser ? getAiInsight(selectedEvaluationUser) : null;
+  const approvedInternProfiles = allProfiles.filter((p) => p?.is_approved === true && isInternLikeRole(getNormalizedRole(p)));
+  const approvedEmployeeProfiles = allProfiles.filter((p) => p?.is_approved === true && isEmployeeLikeRole(getNormalizedRole(p)));
+  const officialMemberProfiles = allProfiles.filter(isOfficialMemberProfile);
+  const sortedOfficialMemberProfiles = [...officialMemberProfiles].sort((a, b) =>
+    getFirstName(a).localeCompare(getFirstName(b), undefined, { sensitivity: 'base' })
+  );
+  const roleOptions: Array<{ label: string; value: string }> = [
+    { label: 'All Roles', value: 'All' },
+    { label: 'Employee', value: 'Employee' },
+    { label: 'Intern', value: 'Intern' },
+  ];
+
+  const handleSaveEvaluation = async () => {
+    if (!selectedEvaluationUser) {
+      setEvaluationNotice('Select a user to evaluate.');
+      return;
+    }
+
+    if (evaluationDecision === 'pending') {
+      setEvaluationNotice('Choose Pass or Fail before saving.');
+      return;
+    }
+
+    setIsSavingEvaluation(true);
+    setEvaluationNotice('');
+
+    try {
+      const decisionLabel = evaluationDecision === 'pass' ? 'Pass' : 'Fail';
+      const now = new Date().toISOString();
+      const basePayload: any = {
+        grade: decisionLabel,
+        updated_at: now,
+      };
+      const fullPayload: any = {
+        ...basePayload,
+        evaluation_result: evaluationDecision,
+        evaluation_comment: evaluationComment.trim() || null,
+        last_evaluated_at: now,
+      };
+
+      let { error } = await supabase
+        .from('profiles')
+        .update(fullPayload)
+        .eq('id', selectedEvaluationUser.id);
+
+      if (error && isMissingEvaluationColumnError(error)) {
+        const fallback = await supabase
+          .from('profiles')
+          .update(basePayload)
+          .eq('id', selectedEvaluationUser.id);
+        error = fallback.error;
+      }
+
+      if (error) throw error;
+
+      setAllProfiles((prev) => prev.map((profileItem) => (
+        profileItem.id === selectedEvaluationUser.id
+          ? {
+              ...profileItem,
+              grade: decisionLabel,
+              evaluation_result: evaluationDecision,
+              evaluation_comment: evaluationComment.trim() || null,
+              last_evaluated_at: now,
+              updated_at: now,
+            }
+          : profileItem
+      )));
+      setEvaluationNotice('Evaluation saved successfully.');
+    } catch (error) {
+      console.error('Error saving evaluation:', error);
+      setEvaluationNotice('Unable to save evaluation right now.');
+    } finally {
+      setIsSavingEvaluation(false);
     }
   };
 
@@ -440,7 +766,15 @@ const Admin: React.FC = () => {
               onClick={() => setIsProfileOpen(true)}
             >
               <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold group-hover:scale-110 transition-transform">
-                {user.email?.[0].toUpperCase() || 'U'}
+                {profile?.avatar_url ? (
+                  <img
+                    src={profile.avatar_url}
+                    alt={profile?.full_name || 'Profile'}
+                    className="w-full h-full rounded-full object-cover"
+                  />
+                ) : (
+                  user.email?.[0].toUpperCase() || 'U'
+                )}
               </div>
               <div className="overflow-hidden">
                 <p className={`text-sm font-bold truncate transition-colors ${darkMode ? 'text-slate-200 group-hover:text-emerald-400' : 'group-hover:text-emerald-600'}`}>{profile?.full_name || user.email?.split('@')[0] || 'User'}</p>
@@ -482,7 +816,7 @@ const Admin: React.FC = () => {
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-blue-400 bg-blue-500/20' : 'text-blue-600 bg-blue-50'}`}>Active</span>
                 </div>
                 <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Total Interns</p>
-                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{allProfiles.filter(p => p.role?.toLowerCase() === 'intern' || p.role?.toLowerCase() === 'user').length}</h3>
+                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{approvedInternProfiles.length}</h3>
               </div>
 
               <div className={`rounded-[32px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:border-emerald-500/40' : 'bg-white border-black/5 hover:border-emerald-500/20'}`}>
@@ -493,7 +827,7 @@ const Admin: React.FC = () => {
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-purple-400 bg-purple-500/20' : 'text-purple-600 bg-purple-50'}`}>Staff</span>
                 </div>
                 <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Total Employee</p>
-                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{allProfiles.filter(p => p.role?.toLowerCase() === 'employee' || p.role?.toLowerCase() === 'admin').length}</h3>
+                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{approvedEmployeeProfiles.length}</h3>
               </div>
 
               <div className={`rounded-[32px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:border-emerald-500/40' : 'bg-white border-black/5 hover:border-emerald-500/20'}`}>
@@ -508,7 +842,7 @@ const Admin: React.FC = () => {
                 </div>
                 <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Active now</p>
                 <h3 className={`text-3xl font-bold ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>
-                  {Math.max(1, Math.floor(allProfiles.length * (0.2 + Math.random() * 0.15)))}
+                  {Math.max(1, Math.floor(officialMemberProfiles.length * (0.2 + Math.random() * 0.15)))}
                 </h3>
               </div>
             </div>
@@ -537,10 +871,10 @@ const Admin: React.FC = () => {
                   <div className="flex items-center gap-4">
                     <div>
                       <h3 className="text-2xl font-bold">All Users</h3>
-                      <p className="text-sm text-gray-400">Manage and monitor all {allProfiles.length} platform members</p>
+                      <p className="text-sm text-gray-400">Manage and monitor all {officialMemberProfiles.length} platform members</p>
                     </div>
                     <button 
-                      onClick={fetchAllProfiles}
+                      onClick={refreshUsersData}
                       className="p-2 rounded-full bg-gray-50 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all"
                       title="Refresh data"
                     >
@@ -551,27 +885,55 @@ const Admin: React.FC = () => {
                   <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
                     {/* Search Input */}
                     <div className="relative">
-                      <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                      </div>
                       <input 
                         type="text" 
                         placeholder="Search users..." 
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-10 pr-4 py-2 bg-gray-50 border border-black/5 rounded-xl text-sm focus:outline-none focus:border-emerald-500 w-full sm:w-64 transition-colors"
+                        className="pl-10 pr-4 py-2 bg-gray-50 border border-emerald-200 rounded-xl text-sm focus:outline-none focus:border-emerald-400 w-full sm:w-64 transition-colors"
                       />
                     </div>
 
                     {/* Role Filter Dropdown */}
-                    <select 
-                      value={roleFilter}
-                      onChange={(e) => setRoleFilter(e.target.value)}
-                      className="px-4 py-2 bg-gray-50 border border-black/5 rounded-xl text-sm focus:outline-none focus:border-emerald-500 transition-colors"
-                    >
-                      <option value="All">All Roles</option>
-                      <option value="Employee">Employee</option>
-                      <option value="Intern">Intern</option>
-                      <option value="Applicant">Applicant</option>
-                    </select>
+                    <div className="relative min-w-[140px]" ref={roleDropdownRef}>
+                      <button
+                        type="button"
+                        onClick={() => setIsRoleDropdownOpen((prev) => !prev)}
+                        className="w-full pl-4 pr-10 py-2 bg-gray-50 border border-emerald-200 rounded-xl text-sm text-left focus:outline-none focus:border-emerald-400 hover:border-emerald-300 hover:bg-emerald-50/40 transition-colors"
+                      >
+                        {roleOptions.find((option) => option.value === roleFilter)?.label || 'All Roles'}
+                      </button>
+                      <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                      </div>
+
+                      {isRoleDropdownOpen && (
+                        <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-xl border border-emerald-200 bg-white shadow-lg">
+                          {roleOptions.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                setRoleFilter(option.value);
+                                setIsRoleDropdownOpen(false);
+                              }}
+                              className={`w-full px-4 py-2 text-left text-sm transition-colors ${
+                                roleFilter === option.value
+                                  ? 'bg-white text-emerald-700 font-medium hover:bg-emerald-100'
+                                  : 'bg-white text-gray-700 hover:bg-emerald-100'
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -588,14 +950,14 @@ const Admin: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {allProfiles
+                      {sortedOfficialMemberProfiles
                         .filter(p => {
-                          const matchesSearch = p.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                                              p.email?.toLowerCase().includes(searchTerm.toLowerCase());
+                          const term = searchTerm.trim().toLowerCase();
+                          const firstName = getFirstName(p).toLowerCase();
+                          const matchesSearch = term === '' || firstName.includes(term);
                           const matchesRole = roleFilter === 'All' || 
-                                            (roleFilter === 'Employee' && (p.role?.toLowerCase() === 'employee' || p.role?.toLowerCase() === 'admin')) ||
-                                            (roleFilter === 'Intern' && (p.role?.toLowerCase() === 'intern' || p.role?.toLowerCase() === 'user')) ||
-                                            (roleFilter === 'Applicant' && (!p.role || p.role === ''));
+                                            (roleFilter === 'Employee' && p.role?.toLowerCase() === 'employee') ||
+                                            (roleFilter === 'Intern' && p.role?.toLowerCase() === 'intern');
                           return matchesSearch && matchesRole;
                         })
                         .map((p) => (
@@ -603,10 +965,10 @@ const Admin: React.FC = () => {
                             <td className="py-4">
                               <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 font-bold text-xs">
-                                  {p.full_name?.[0] || 'U'}
+                                  {getFirstName(p)[0] || 'U'}
                                 </div>
                                 <div>
-                                  <p className="text-sm font-bold text-gray-900">{p.full_name}</p>
+                                  <p className="text-sm font-bold text-gray-900">{getFirstName(p)}</p>
                                   <p className="text-[10px] text-gray-400">{p.email}</p>
                                 </div>
                               </div>
@@ -722,13 +1084,172 @@ const Admin: React.FC = () => {
             </div>
           </div>
         ) : activeTab === 'Evaluation' ? (
-          <div className="bg-white rounded-[40px] p-12 shadow-sm border border-black/5 min-h-[600px] flex items-center justify-center">
-            <div className="text-center">
-              <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 mx-auto mb-6">
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          <div className="space-y-8">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div>
+                <h2 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-[#1a1a1a]'}`}>Evaluation</h2>
+                <p className={darkMode ? 'text-slate-400' : 'text-gray-500'}>Review progress and finalize Pass or Fail with comments.</p>
               </div>
-              <h2 className="text-3xl font-bold mb-2">Evaluation</h2>
-              <p className="text-gray-500">this is Evaluation</p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <select
+                  value={evaluationRoleFilter}
+                  onChange={(e) => setEvaluationRoleFilter(e.target.value as 'intern' | 'employee')}
+                  className={`px-4 py-3 rounded-xl border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
+                    darkMode ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-black/10 text-gray-800'
+                  }`}
+                >
+                  <option value="intern">Intern</option>
+                  <option value="employee">Employee</option>
+                </select>
+
+                <select
+                  value={selectedEvaluationUserId}
+                  onChange={(e) => setSelectedEvaluationUserId(e.target.value)}
+                  className={`px-4 py-3 rounded-xl border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 min-w-[260px] ${
+                    darkMode ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-black/10 text-gray-800'
+                  }`}
+                >
+                  {evaluationCandidates.length === 0 ? (
+                    <option value="">No users available</option>
+                  ) : (
+                    evaluationCandidates.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.full_name || candidate.email || candidate.id}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <div className={`rounded-[36px] p-8 border shadow-sm transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+              {!selectedEvaluationUser ? (
+                <div className="py-16 text-center">
+                  <p className={`text-sm italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Select a user to start evaluation.</p>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                      <h3 className={`text-2xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                        {selectedEvaluationUser.full_name || 'Unnamed User'}
+                      </h3>
+                      <p className={`text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                        {(selectedEvaluationUser.role || evaluationRoleFilter).toString()} • {selectedEvaluationUser.email || 'No email'}
+                      </p>
+                    </div>
+                    <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
+                      (selectedEvaluationUser.is_approved === true)
+                        ? (darkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600')
+                        : (darkMode ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-50 text-orange-600')
+                    }`}>
+                      {(selectedEvaluationUser.is_approved === true) ? 'Approved' : 'Pending'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                    <div className={`rounded-2xl p-5 border ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-black/5'}`}>
+                      <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Current Work</p>
+                      <p className={`text-sm font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                        {selectedEvaluationUser.current_course || 'Introduction to AI Solutions'}
+                      </p>
+                    </div>
+                    <div className={`rounded-2xl p-5 border ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-black/5'}`}>
+                      <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Completion</p>
+                      <p className={`text-sm font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                        {Number(selectedEvaluationUser.completion || 0)}%
+                      </p>
+                    </div>
+                    <div className={`rounded-2xl p-5 border ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-black/5'}`}>
+                      <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Efficiency</p>
+                      <p className={`text-sm font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                        {Number(selectedEvaluationUser.efficiency || 0)}%
+                      </p>
+                    </div>
+                    <div className={`rounded-2xl p-5 border ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-black/5'}`}>
+                      <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Hours Spent</p>
+                      <p className={`text-sm font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                        {Number(selectedEvaluationUser.hours_spent || 0)} hrs
+                      </p>
+                    </div>
+                  </div>
+
+                  {evaluationInsight && (
+                    <div className={`rounded-2xl p-6 border ${
+                      evaluationInsight.score >= 60
+                        ? (darkMode ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-emerald-50 border-emerald-100')
+                        : (darkMode ? 'bg-orange-500/10 border-orange-500/30' : 'bg-orange-50 border-orange-100')
+                    }`}>
+                      <p className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${
+                        evaluationInsight.score >= 60
+                          ? (darkMode ? 'text-emerald-400' : 'text-emerald-600')
+                          : (darkMode ? 'text-orange-400' : 'text-orange-600')
+                      }`}>
+                        AI Insight • Score {evaluationInsight.score}/100
+                      </p>
+                      <p className={`text-base font-bold mb-1 ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{evaluationInsight.title}</p>
+                      <p className={`text-sm ${darkMode ? 'text-slate-300' : 'text-gray-600'}`}>{evaluationInsight.detail}</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Final Decision</p>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setEvaluationDecision('pass')}
+                        className={`px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${
+                          evaluationDecision === 'pass'
+                            ? 'bg-emerald-600 text-white'
+                            : (darkMode ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100')
+                        }`}
+                      >
+                        Pass
+                      </button>
+                      <button
+                        onClick={() => setEvaluationDecision('fail')}
+                        className={`px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${
+                          evaluationDecision === 'fail'
+                            ? (darkMode ? 'bg-red-500 text-white' : 'bg-red-600 text-white')
+                            : (darkMode ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-red-50 text-red-600 hover:bg-red-100')
+                        }`}
+                      >
+                        Fail
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                      Comments
+                    </label>
+                    <textarea
+                      value={evaluationComment}
+                      onChange={(e) => setEvaluationComment(e.target.value)}
+                      rows={4}
+                      placeholder="Add feedback and next-step recommendations."
+                      className={`w-full px-4 py-3 rounded-xl border text-sm resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
+                        darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-gray-50 border-black/10 text-gray-900'
+                      }`}
+                    />
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    {evaluationNotice ? (
+                      <p className={`text-xs font-medium ${evaluationNotice.toLowerCase().includes('success') ? 'text-emerald-500' : (darkMode ? 'text-orange-400' : 'text-orange-600')}`}>
+                        {evaluationNotice}
+                      </p>
+                    ) : <span />}
+
+                    <button
+                      onClick={handleSaveEvaluation}
+                      disabled={isSavingEvaluation || !selectedEvaluationUser}
+                      className="px-6 py-3 rounded-xl bg-emerald-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-emerald-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {isSavingEvaluation ? 'Saving...' : 'Save Evaluation'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ) : activeTab === 'Reports' ? (
@@ -755,6 +1276,7 @@ const Admin: React.FC = () => {
                     <tr className={`border-b ${darkMode ? 'border-slate-700' : 'border-black/5'}`}>
                       <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Name</th>
                       <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Email</th>
+                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Phone</th>
                       <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Position</th>
                       <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Date</th>
                       <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Status</th>
@@ -765,6 +1287,7 @@ const Admin: React.FC = () => {
                       <tr key={app.id} className={`border-b transition-colors ${darkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-black/5 hover:bg-gray-50'}`}>
                         <td className={`py-4 font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{app.first_name} {app.last_name}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.email}</td>
+                        <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.phone || 'N/A'}</td>
                         <td className="py-4 text-sm font-bold text-lw-green">{app.project_applied}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>{new Date(app.created_at).toLocaleDateString()}</td>
                         <td className="py-4">
@@ -783,7 +1306,7 @@ const Admin: React.FC = () => {
                     ))}
                     {applications.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="py-12 text-center text-gray-400 italic">No applications found</td>
+                        <td colSpan={6} className="py-12 text-center text-gray-400 italic">No applications found</td>
                       </tr>
                     )}
                   </tbody>
@@ -892,7 +1415,7 @@ const Admin: React.FC = () => {
             <div className="flex justify-between items-center mb-6">
               <h2 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-[#1a1a1a]'}`}>Manage Users</h2>
               <button 
-                onClick={fetchAllProfiles}
+                onClick={refreshUsersData}
                 className={`p-2 rounded-full shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700' : 'bg-white border-black/5 hover:bg-gray-50'}`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
@@ -912,16 +1435,20 @@ const Admin: React.FC = () => {
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className={`border-b ${darkMode ? 'border-slate-700' : 'border-black/5'}`}>
+                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>ID</th>
                         <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Name</th>
-                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Country</th>
-                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Level</th>
-                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Efficiency</th>
-                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Actions</th>
+                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Email</th>
+                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Phone</th>
+                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Role</th>
+                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {allProfiles.filter(p => p.role?.toLowerCase() === 'intern' || p.role?.toLowerCase() === 'user').map((p) => (
+                      {allProfiles.filter(p => (p.role?.toLowerCase() === 'intern' || p.role?.toLowerCase() === 'user') && p.is_approved === true).map((p, index) => (
                         <tr key={p.id} className={`border-b transition-colors ${darkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-black/5 hover:bg-gray-50'}`}>
+                          <td className={`py-4 text-xs font-mono ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                            {formatManageProfileCode(p, index, 'intern')}
+                          </td>
                           <td className="py-4">
                             <div className="flex items-center gap-3">
                               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold ${darkMode ? 'bg-slate-700 text-slate-300' : 'bg-gray-100 text-gray-700'}`}>
@@ -930,9 +1457,9 @@ const Admin: React.FC = () => {
                               <span className={`text-sm font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{p.full_name}</span>
                             </div>
                           </td>
-                          <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{p.country || 'N/A'}</td>
-                          <td className={`py-4 text-sm ${darkMode ? 'text-slate-300' : 'text-gray-900'}`}>{p.level || 1}</td>
-                          <td className={`py-4 text-sm ${darkMode ? 'text-slate-300' : 'text-gray-900'}`}>{p.efficiency || 0}%</td>
+                          <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{p.email || 'N/A'}</td>
+                          <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{p.phone || 'N/A'}</td>
+                          <td className={`py-4 text-sm capitalize ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>{p.role || 'intern'}</td>
                           <td className="py-4 text-sm">
                             <button 
                               onClick={() => setEditingUser({ ...p })}
@@ -943,9 +1470,9 @@ const Admin: React.FC = () => {
                           </td>
                         </tr>
                       ))}
-                      {allProfiles.filter(p => p.role?.toLowerCase() === 'intern' || p.role?.toLowerCase() === 'user').length === 0 && (
+                      {allProfiles.filter(p => (p.role?.toLowerCase() === 'intern' || p.role?.toLowerCase() === 'user') && p.is_approved === true).length === 0 && (
                         <tr>
-                          <td colSpan={5} className={`py-8 text-center text-sm italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>No interns found</td>
+                          <td colSpan={6} className={`py-8 text-center text-sm italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>No interns found</td>
                         </tr>
                       )}
                     </tbody>
@@ -965,15 +1492,20 @@ const Admin: React.FC = () => {
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className={`border-b ${darkMode ? 'border-slate-700' : 'border-black/5'}`}>
-                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>User</th>
+                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>ID</th>
+                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Name</th>
                         <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Email</th>
-                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Joined</th>
-                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Actions</th>
+                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Phone</th>
+                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Status</th>
+                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {allProfiles.filter(p => p.role?.toLowerCase() === 'applicant').map((p) => (
+                      {pendingProfiles.map((p, index) => (
                         <tr key={p.id} className={`border-b transition-colors ${darkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-black/5 hover:bg-gray-50'}`}>
+                          <td className={`py-4 text-xs font-mono ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                            {formatPendingProfileCode(index)}
+                          </td>
                           <td className="py-4">
                             <div className="flex items-center gap-3">
                               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold ${darkMode ? 'bg-orange-500/10 text-orange-400' : 'bg-orange-50 text-orange-600'}`}>
@@ -982,29 +1514,32 @@ const Admin: React.FC = () => {
                               <span className={`text-sm font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{p.full_name}</span>
                             </div>
                           </td>
-                          <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{p.email}</td>
-                          <td className={`py-4 text-sm ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>{new Date(p.created_at).toLocaleDateString()}</td>
+                          <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{p.email || 'N/A'}</td>
+                          <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{p.phone || 'N/A'}</td>
+                          <td className={`py-4 text-sm capitalize ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>{resolveApprovedRole(p.role)}</td>
                           <td className="py-4 text-sm">
                             <div className="flex gap-2">
                               <button 
-                                onClick={() => handleApproveUser(p.id)}
+                                onClick={() => handleApproveUser(p)}
+                                disabled={actioningUserId === p.id}
                                 className="bg-emerald-600 text-white px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-700 transition-colors"
                               >
-                                Accept
+                                {actioningUserId === p.id ? 'Working...' : 'Accept'}
                               </button>
                               <button 
                                 onClick={() => handleDeclineUser(p.id)}
+                                disabled={actioningUserId === p.id}
                                 className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${darkMode ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
                               >
-                                Decline
+                                {actioningUserId === p.id ? 'Working...' : 'Delete'}
                               </button>
                             </div>
                           </td>
                         </tr>
                       ))}
-                      {allProfiles.filter(p => p.role?.toLowerCase() === 'applicant').length === 0 && (
+                      {pendingProfiles.length === 0 && (
                         <tr>
-                          <td colSpan={4} className={`py-8 text-center text-sm italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>No pending approvals</td>
+                          <td colSpan={6} className={`py-8 text-center text-sm italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>No pending approvals</td>
                         </tr>
                       )}
                     </tbody>
@@ -1024,16 +1559,20 @@ const Admin: React.FC = () => {
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className={`border-b ${darkMode ? 'border-slate-700' : 'border-black/5'}`}>
+                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>ID</th>
                         <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Name</th>
-                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Country</th>
+                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Email</th>
+                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Phone</th>
                         <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Role</th>
-                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Grade</th>
-                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Actions</th>
+                        <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {allProfiles.filter(p => p.role?.toLowerCase() === 'employee' || p.role?.toLowerCase() === 'admin').map((p) => (
+                      {allProfiles.filter(p => (p.role?.toLowerCase() === 'employee' || p.role?.toLowerCase() === 'admin') && p.is_approved === true).map((p, index) => (
                         <tr key={p.id} className={`border-b transition-colors ${darkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-black/5 hover:bg-gray-50'}`}>
+                          <td className={`py-4 text-xs font-mono ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                            {formatManageProfileCode(p, index, 'employee')}
+                          </td>
                           <td className="py-4">
                             <div className="flex items-center gap-3">
                               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold ${darkMode ? 'bg-slate-700 text-slate-300' : 'bg-gray-100 text-gray-700'}`}>
@@ -1042,9 +1581,9 @@ const Admin: React.FC = () => {
                               <span className={`text-sm font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{p.full_name}</span>
                             </div>
                           </td>
-                          <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{p.country || 'N/A'}</td>
+                          <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{p.email || 'N/A'}</td>
+                          <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{p.phone || 'N/A'}</td>
                           <td className={`py-4 text-sm capitalize ${darkMode ? 'text-slate-300' : 'text-gray-900'}`}>{p.role}</td>
-                          <td className={`py-4 text-sm ${darkMode ? 'text-slate-300' : 'text-gray-900'}`}>{p.grade || 'N/A'}</td>
                           <td className="py-4 text-sm">
                             <button 
                               onClick={() => setEditingUser({ ...p })}
@@ -1055,6 +1594,11 @@ const Admin: React.FC = () => {
                           </td>
                         </tr>
                       ))}
+                      {allProfiles.filter(p => (p.role?.toLowerCase() === 'employee' || p.role?.toLowerCase() === 'admin') && p.is_approved === true).length === 0 && (
+                        <tr>
+                          <td colSpan={6} className={`py-8 text-center text-sm italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>No employees found</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1231,3 +1775,5 @@ const Admin: React.FC = () => {
 };
 
 export default Admin;
+
+

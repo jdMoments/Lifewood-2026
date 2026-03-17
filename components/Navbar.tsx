@@ -158,7 +158,7 @@ const Navbar: React.FC = () => {
           <li>
             <button 
               onClick={() => setIsJoinModalOpen(true)}
-              className={`px-5 py-2 rounded-full text-sm font-bold no-underline transition-all shadow-lg cursor-pointer hover:-translate-y-0.5
+              className={`inline-flex items-center justify-center px-5 py-2 rounded-full text-sm font-bold no-underline transition-all duration-200 shadow-lg cursor-pointer transform-gpu origin-center hover:scale-105
                 ${isJoinModalOpen 
                   ? 'bg-[#1a2e1a] text-white shadow-[#1a2e1a]/20' 
                   : 'bg-[#1a2e1a] text-white hover:bg-[#1a2e1a]/90 shadow-[#1a2e1a]/20'

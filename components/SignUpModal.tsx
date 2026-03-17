@@ -57,8 +57,11 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose, onSuccess })
     setLoading(true);
 
     try {
-            const { data, error: signUpError } = await supabase.auth.signUp({
-        email: formData.email,
+      const normalizedEmail = formData.email.trim().toLowerCase();
+      const normalizedRole = (formData.role || '').trim().toLowerCase();
+
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: normalizedEmail,
         password: formData.password,
         options: {
           data: {
@@ -67,7 +70,7 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose, onSuccess })
             last_name: formData.lastName,
             dob: formData.dob,
             phone: formData.phone,
-            role: formData.role
+            role: normalizedRole
           }
         }
       });
@@ -75,7 +78,7 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose, onSuccess })
       if (signUpError) throw signUpError;
 
       if (onSuccess) {
-        onSuccess(formData.email, formData.password);
+        onSuccess(normalizedEmail, formData.password);
       }
 
       setSuccess('Account created! Please check your email for the confirmation link.');

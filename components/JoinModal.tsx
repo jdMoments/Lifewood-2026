@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 
@@ -8,11 +8,14 @@ interface JoinModalProps {
 }
 
 const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
+  const modalContentRef = useRef<HTMLDivElement>(null);
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     age: '',
     email: '',
+    phoneCountryCode: '+63',
+    phoneNumber: '',
     degree: '',
     project: '',
     experience: ''
@@ -24,6 +27,8 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
   React.useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
+      // Always open the modal from the top section so the header stays visible.
+      modalContentRef.current?.scrollTo({ top: 0, behavior: 'auto' });
     } else {
       document.body.style.overflow = 'unset';
     }
@@ -38,16 +43,22 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
     setStatus(null);
 
     try {
+      const normalizedEmail = formData.email.trim().toLowerCase();
+      const normalizedProject = formData.project.trim();
+      const normalizedPhoneNumber = formData.phoneNumber.trim();
+      const normalizedPhone = normalizedPhoneNumber ? `${formData.phoneCountryCode} ${normalizedPhoneNumber}` : null;
+
       const { error } = await supabase
         .from('applications')
         .insert([{
-          first_name: formData.firstName,
-          last_name: formData.lastName,
-          email: formData.email,
+          first_name: formData.firstName.trim(),
+          last_name: formData.lastName.trim(),
+          email: normalizedEmail,
+          phone: normalizedPhone,
           age: parseInt(formData.age) || null,
-          degree: formData.degree,
-          project_applied: formData.project,
-          experience: formData.experience,
+          degree: formData.degree.trim(),
+          project_applied: normalizedProject,
+          experience: formData.experience.trim(),
           status: 'pending'
         }]);
 
@@ -59,6 +70,8 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
         lastName: '',
         age: '',
         email: '',
+        phoneCountryCode: '+63',
+        phoneNumber: '',
         degree: '',
         project: '',
         experience: ''
@@ -86,7 +99,7 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6">
+        <div className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-20 md:p-6 md:pt-24">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -98,13 +111,11 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
 
           {/* Modal Content */}
           <motion.div
-            drag
-            dragMomentum={false}
-            dragElastic={0.1}
-            initial={{ opacity: 0, scale: 0.95, y: 70 }}
-            animate={{ opacity: 1, scale: 1, y: 50 }}
-            exit={{ opacity: 0, scale: 0.95, y: 70 }}
-            className="relative w-full max-w-2xl bg-[#F8F5F0] rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] overflow-y-auto cursor-grab active:cursor-grabbing"
+            ref={modalContentRef}
+            initial={{ opacity: 0, scale: 0.96, y: 24 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 24 }}
+            className="relative w-full max-w-2xl bg-[#F8F5F0] rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100vh-6rem)] md:max-h-[calc(100vh-7rem)] overflow-y-auto"
           >
             {/* Close Button */}
             <button
@@ -186,6 +197,33 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
                   </div>
 
                   <div className="space-y-2">
+                    <label className="text-sm font-semibold text-[#002D21]">Phone Number *</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-[220px_1fr] gap-3">
+                      <select
+                        name="phoneCountryCode"
+                        value={formData.phoneCountryCode}
+                        onChange={handleChange}
+                        className="w-full px-4 py-3 bg-[#F8F5F0] border-none rounded-lg focus:ring-2 focus:ring-lw-green/20 outline-none transition-all appearance-none cursor-pointer"
+                      >
+                        <option value="+63">+63 (Philippines)</option>
+                        <option value="+1">+1 (USA/Canada)</option>
+                        <option value="+65">+65 (Singapore)</option>
+                        <option value="+60">+60 (Malaysia)</option>
+                        <option value="+81">+81 (Japan)</option>
+                      </select>
+                      <input
+                        type="tel"
+                        name="phoneNumber"
+                        value={formData.phoneNumber}
+                        onChange={handleChange}
+                        required
+                        placeholder="912345678"
+                        className="w-full px-4 py-3 bg-[#F8F5F0] border-none rounded-lg focus:ring-2 focus:ring-lw-green/20 outline-none transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
                     <label className="text-sm font-semibold text-[#002D21]">Degree/Field of Study</label>
                     <input 
                       type="text" 
@@ -207,10 +245,10 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
                       className="w-full px-4 py-3 bg-[#F8F5F0] border-none rounded-lg focus:ring-2 focus:ring-lw-green/20 outline-none transition-all appearance-none cursor-pointer"
                     >
                       <option value="">Select a project</option>
-                      <option value="cv">Computer Vision</option>
-                      <option value="nlp">Natural Language Processing</option>
-                      <option value="ml">Machine Learning</option>
-                      <option value="genealogy">Genealogy Data Processing</option>
+                      <option value="Computer Vision">Computer Vision</option>
+                      <option value="Natural Language Processing">Natural Language Processing</option>
+                      <option value="Machine Learning">Machine Learning</option>
+                      <option value="Genealogy Data Processing">Genealogy Data Processing</option>
                     </select>
                   </div>
 

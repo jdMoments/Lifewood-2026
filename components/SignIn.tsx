@@ -3,6 +3,13 @@ import { motion } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 import SignUpModal from './SignUpModal';
 
+const ADMIN_EMAIL = 'damayojholmer@gmail.com';
+
+const isMissingDeclinedColumnError = (error: any) => {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return message.includes('is_declined') && message.includes('does not exist');
+};
+
 const SignIn: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
@@ -17,17 +24,60 @@ const SignIn: React.FC = () => {
     setLoading(true);
     setError(null);
     setSuccess(null);
+    const normalizedEmail = email.trim().toLowerCase();
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
         password,
       });
 
       if (error) throw error;
-      
-      // Redirect based on email
-      if (email === 'damayojholmer@gmail.com') {
+      const signedInUserId = data.user?.id;
+
+      if (!signedInUserId) {
+        throw new Error('Unable to validate account status. Please try again.');
+      }
+
+      let profile: any = null;
+      {
+        const { data: profileWithDeclined, error: profileError } = await supabase
+          .from('profiles')
+          .select('role, is_approved, is_declined')
+          .eq('id', signedInUserId)
+          .maybeSingle();
+
+        if (profileError && isMissingDeclinedColumnError(profileError)) {
+          const { data: profileLegacy, error: legacyError } = await supabase
+            .from('profiles')
+            .select('role, is_approved')
+            .eq('id', signedInUserId)
+            .maybeSingle();
+
+          if (legacyError) throw legacyError;
+          profile = profileLegacy;
+        } else if (profileError) {
+          throw profileError;
+        } else {
+          profile = profileWithDeclined;
+        }
+      }
+
+      if (profile?.is_declined === true) {
+        await supabase.auth.signOut();
+        setError('Your account request was deleted by admin.');
+        return;
+      }
+
+      const isAdminUser = normalizedEmail === ADMIN_EMAIL || (profile?.role || '').toLowerCase() === 'admin';
+
+      if (!isAdminUser && profile?.is_approved !== true) {
+        await supabase.auth.signOut();
+        setError('Your account is pending admin approval. You can log in after it is accepted.');
+        return;
+      }
+
+      if (isAdminUser) {
         window.location.hash = '#/admin';
       } else {
         window.location.hash = '#/user';
@@ -206,11 +256,6 @@ const SignIn: React.FC = () => {
             </p>
           </div>
 
-          <SignUpModal 
-            isOpen={isSignUpModalOpen} 
-            onClose={() => setIsSignUpModalOpen(false)} 
-            onSuccess={handleSignUpSuccess}
-          />
         </div>
 
         {/* Right Side - Visuals with Diagonal Design */}
@@ -270,6 +315,12 @@ const SignIn: React.FC = () => {
           <div className="absolute -top-20 -left-20 w-64 h-64 bg-lw-green-deep/20 rounded-full blur-3xl"></div>
         </div>
       </motion.div>
+
+      <SignUpModal 
+        isOpen={isSignUpModalOpen} 
+        onClose={() => setIsSignUpModalOpen(false)} 
+        onSuccess={handleSignUpSuccess}
+      />
     </div>
   );
 };

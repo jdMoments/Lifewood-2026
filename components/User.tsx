@@ -8,7 +8,6 @@ const User: React.FC = () => {
   const { user, loading: authLoading, signOut: authSignOut } = useAuth();
   const [profile, setProfile] = useState<any>(null);
   const [goals, setGoals] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [newGoalTitle, setNewGoalTitle] = useState('');
   const [isAddingGoal, setIsAddingGoal] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -43,7 +42,6 @@ const User: React.FC = () => {
       .single();
     
     if (!error) setProfile(data);
-    setLoading(false);
   };
 
   const fetchGoals = async (userId: string) => {
@@ -90,16 +88,9 @@ const User: React.FC = () => {
     setIsAddingGoal(false);
   };
 
-  if (authLoading || (loading && user)) {
-    return (
-      <div className={`min-h-screen flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-900 text-emerald-400' : 'bg-white text-emerald-900'}`}>
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-600"></div>
-      </div>
-    );
-  }
+  if (authLoading) return null;
 
   if (!user) return null;
-
   const menuItems = [
     { icon: '📊', label: 'Dashboard', active: true },
     { icon: '🕒', label: 'My Progress' },
@@ -193,7 +184,15 @@ const User: React.FC = () => {
               onClick={() => setIsProfileOpen(true)}
             >
               <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold group-hover:scale-110 transition-transform">
-                {user.email?.[0].toUpperCase() || 'U'}
+                {profile?.avatar_url ? (
+                  <img
+                    src={profile.avatar_url}
+                    alt={profile?.full_name || 'Profile'}
+                    className="w-full h-full rounded-full object-cover"
+                  />
+                ) : (
+                  user.email?.[0].toUpperCase() || 'U'
+                )}
               </div>
               <div className="overflow-hidden">
                 <p className={`text-sm font-bold truncate transition-colors ${darkMode ? 'text-slate-100 group-hover:text-emerald-400' : 'group-hover:text-emerald-600'}`}>{profile?.full_name || user.email?.split('@')[0] || 'User'}</p>
@@ -407,3 +406,5 @@ const User: React.FC = () => {
 };
 
 export default User;
+
+

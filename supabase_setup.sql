@@ -1,67 +1,255 @@
 -- ==========================================
--- 1. SETUP EXTENSIONS
+-- Lifewood Supabase Setup (Clean)
+-- Goal:
+-- 1) Every new non-admin account is saved to profiles as pending approval.
+-- 2) Admin can see/update/delete all profiles for Accept/Decline.
+-- 3) Existing auth.users are backfilled into profiles.
 -- ==========================================
+
 create extension if not exists "pgcrypto";
 
 -- ==========================================
--- 2. USER PROFILES
+-- 1. PROFILES TABLE
 -- ==========================================
 create table if not exists public.profiles (
   id uuid references auth.users on delete cascade primary key,
+  profile_code text unique,
   email text,
-  updated_at timestamp with time zone default timezone('utc'::text, now()),
+  updated_at timestamptz default timezone('utc'::text, now()),
   username text unique,
   full_name text,
+  nick_name text,
   avatar_url text,
-  role text default 'applicant' check (role in ('admin', 'intern', 'employee', 'applicant', 'User', 'Intern', 'Employee')),
+  phone text,
+  dob text,
+  gender text default 'Male',
+  role text default 'applicant',
   level integer default 1,
   efficiency integer default 0,
   is_approved boolean default false,
+  is_declined boolean default false,
+  evaluation_result text default 'pending',
+  evaluation_comment text,
+  last_evaluated_at timestamptz,
   country text,
+  language text default 'English',
+  time_zone text default 'Asia/Taipei',
   grade text default 'N/A',
   current_course text default 'Introduction to AI Solutions',
   completion integer default 0,
   hours_spent integer default 0,
-  created_at timestamp with time zone default timezone('utc'::text, now())
+  created_at timestamptz default timezone('utc'::text, now())
 );
 
--- Ensure columns exist if table was created previously
 alter table public.profiles add column if not exists email text;
-alter table public.profiles add column if not exists is_approved boolean default false;
+alter table public.profiles add column if not exists profile_code text;
+alter table public.profiles add column if not exists updated_at timestamptz default timezone('utc'::text, now());
+alter table public.profiles add column if not exists full_name text;
+alter table public.profiles add column if not exists nick_name text;
+alter table public.profiles add column if not exists avatar_url text;
+alter table public.profiles add column if not exists phone text;
+alter table public.profiles add column if not exists dob text;
+alter table public.profiles add column if not exists gender text default 'Male';
 alter table public.profiles add column if not exists role text default 'applicant';
+alter table public.profiles add column if not exists level integer default 1;
+alter table public.profiles add column if not exists efficiency integer default 0;
+alter table public.profiles add column if not exists is_approved boolean default false;
+alter table public.profiles add column if not exists is_declined boolean default false;
+alter table public.profiles add column if not exists evaluation_result text default 'pending';
+alter table public.profiles add column if not exists evaluation_comment text;
+alter table public.profiles add column if not exists last_evaluated_at timestamptz;
+alter table public.profiles add column if not exists country text;
+alter table public.profiles add column if not exists language text default 'English';
+alter table public.profiles add column if not exists time_zone text default 'Asia/Taipei';
 alter table public.profiles add column if not exists grade text default 'N/A';
 alter table public.profiles add column if not exists current_course text default 'Introduction to AI Solutions';
 alter table public.profiles add column if not exists completion integer default 0;
 alter table public.profiles add column if not exists hours_spent integer default 0;
-alter table public.profiles add column if not exists efficiency integer default 0;
-alter table public.profiles add column if not exists level integer default 1;
+alter table public.profiles add column if not exists created_at timestamptz default timezone('utc'::text, now());
+create unique index if not exists profiles_profile_code_key on public.profiles (profile_code) where profile_code is not null;
 
--- Sync existing emails from Auth to Profiles
-update public.profiles
-set email = auth.users.email
-from auth.users
-where public.profiles.id = auth.users.id
-and public.profiles.email is null;
+create sequence if not exists public.profile_code_ph_seq;
+create sequence if not exists public.profile_code_emp_seq;
+
+select setval(
+  'public.profile_code_ph_seq',
+  coalesce(
+    (
+      select max((substring(profile_code from 3))::integer)
+      from public.profiles
+      where profile_code ~ '^PH[0-9]+$'
+        and coalesce(is_approved, false) = true
+        and lower(coalesce(role, 'applicant')) not in ('employee', 'admin')
+    ),
+    0
+  ) + 1,
+  false
+);
+
+select setval(
+  'public.profile_code_emp_seq',
+  coalesce(
+    (
+      select max((substring(profile_code from 4))::integer)
+      from public.profiles
+      where profile_code ~ '^EMP[0-9]+$'
+        and (
+          lower(coalesce(role, 'applicant')) = 'admin'
+          or (
+            lower(coalesce(role, 'applicant')) = 'employee'
+            and coalesce(is_approved, false) = true
+          )
+        )
+    ),
+    0
+  ) + 1,
+  false
+);
+
+create or replace function public.assign_profile_code_for_role()
+returns trigger
+language plpgsql
+as $$
+declare
+  normalized_role text := lower(coalesce(new.role, 'applicant'));
+  is_approved_now boolean := coalesce(new.is_approved, false);
+  was_approved boolean := case when tg_op = 'UPDATE' then coalesce(old.is_approved, false) else false end;
+begin
+  if normalized_role = 'admin' then
+    if coalesce(new.profile_code, '') !~ '^EMP[0-9]+$' then
+      new.profile_code := 'EMP' || lpad(nextval('public.profile_code_emp_seq')::text, 4, '0');
+    end if;
+    return new;
+  end if;
+
+  if not is_approved_now then
+    -- Keep pending users without permanent PH/EMP code until approval.
+    new.profile_code := null;
+    return new;
+  end if;
+
+  if normalized_role = 'employee' then
+    if coalesce(new.profile_code, '') !~ '^EMP[0-9]+$'
+      or (tg_op = 'UPDATE' and was_approved = false) then
+      new.profile_code := 'EMP' || lpad(nextval('public.profile_code_emp_seq')::text, 4, '0');
+    end if;
+  else
+    if coalesce(new.profile_code, '') !~ '^PH[0-9]+$'
+      or (tg_op = 'UPDATE' and was_approved = false) then
+      new.profile_code := 'PH' || lpad(nextval('public.profile_code_ph_seq')::text, 4, '0');
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_profiles_assign_code on public.profiles;
+create trigger trg_profiles_assign_code
+before insert or update of role, profile_code, is_approved on public.profiles
+for each row
+execute procedure public.assign_profile_code_for_role();
+
+do $$
+declare
+  rec record;
+begin
+  update public.profiles
+  set profile_code = null
+  where coalesce(is_approved, false) = false
+    and lower(coalesce(role, 'applicant')) <> 'admin'
+    and profile_code is not null;
+
+  for rec in
+    select id
+    from public.profiles
+    where lower(coalesce(role, 'applicant')) in ('employee', 'admin')
+      and (
+        lower(coalesce(role, 'applicant')) = 'admin'
+        or coalesce(is_approved, false) = true
+      )
+      and coalesce(profile_code, '') !~ '^EMP[0-9]+$'
+    order by created_at asc nulls last, id asc
+  loop
+    update public.profiles
+    set profile_code = 'EMP' || lpad(nextval('public.profile_code_emp_seq')::text, 4, '0')
+    where id = rec.id;
+  end loop;
+
+  for rec in
+    select id
+    from public.profiles
+    where lower(coalesce(role, 'applicant')) not in ('employee', 'admin')
+      and coalesce(is_approved, false) = true
+      and coalesce(profile_code, '') !~ '^PH[0-9]+$'
+    order by created_at asc nulls last, id asc
+  loop
+    update public.profiles
+    set profile_code = 'PH' || lpad(nextval('public.profile_code_ph_seq')::text, 4, '0')
+    where id = rec.id;
+  end loop;
+end $$;
+
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles
+  add constraint profiles_role_check
+  check (role in ('admin', 'intern', 'employee', 'applicant', 'User', 'Intern', 'Employee'));
+
+alter table public.profiles drop constraint if exists profiles_evaluation_result_check;
+alter table public.profiles
+  add constraint profiles_evaluation_result_check
+  check (evaluation_result in ('pending', 'pass', 'fail'));
 
 alter table public.profiles enable row level security;
 
--- Profile Policies
+-- ==========================================
+-- 2. PROFILE POLICIES
+-- ==========================================
+create or replace function public.is_admin_request()
+returns boolean
+language sql
+stable
+as $$
+  select lower(coalesce(auth.jwt() ->> 'email', ''))
+    in ('damayojholmer@gmail.com', 'jholmerdamayo@gmail.com');
+$$;
+
 drop policy if exists "Users can view own profile" on public.profiles;
-create policy "Users can view own profile" on public.profiles for select using (auth.uid() = id);
+create policy "Users can view own profile" on public.profiles
+for select using (auth.uid() = id);
 
 drop policy if exists "Users can update own profile" on public.profiles;
-create policy "Users can update own profile" on public.profiles for update using (auth.uid() = id);
+create policy "Users can update own profile" on public.profiles
+for update using (auth.uid() = id)
+with check (auth.uid() = id);
 
 drop policy if exists "Admins can view all profiles" on public.profiles;
-create policy "Admins can view all profiles" on public.profiles for select 
-using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
+create policy "Admins can view all profiles" on public.profiles
+for select using (
+  public.is_admin_request()
+);
+
+drop policy if exists "Admins can update all profiles" on public.profiles;
+create policy "Admins can update all profiles" on public.profiles
+for update using (
+  public.is_admin_request()
+)
+with check (
+  public.is_admin_request()
+);
+
+drop policy if exists "Admins can delete all profiles" on public.profiles;
+create policy "Admins can delete all profiles" on public.profiles
+for delete using (
+  public.is_admin_request()
+);
 
 -- ==========================================
--- 3. APPLICATIONS
+-- 3. APPLICATIONS TABLE + RLS
 -- ==========================================
 create table if not exists public.applications (
   id uuid default gen_random_uuid() primary key,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  created_at timestamptz default timezone('utc'::text, now()) not null,
   first_name text not null,
   last_name text not null,
   email text not null,
@@ -69,90 +257,260 @@ create table if not exists public.applications (
   degree text,
   project_applied text not null,
   experience text,
-  resume_url text,
-  status text default 'pending' check (status in ('pending','reviewed','accepted','rejected'))
+  phone text,
+  portfolio_url text,
+  cv_url text,
+  status text default 'pending' not null
 );
+
+alter table public.applications add column if not exists created_at timestamptz default timezone('utc'::text, now());
+alter table public.applications add column if not exists first_name text;
+alter table public.applications add column if not exists last_name text;
+alter table public.applications add column if not exists email text;
+alter table public.applications add column if not exists age integer;
+alter table public.applications add column if not exists degree text;
+alter table public.applications add column if not exists project_applied text;
+alter table public.applications add column if not exists experience text;
+alter table public.applications add column if not exists phone text;
+alter table public.applications add column if not exists portfolio_url text;
+alter table public.applications add column if not exists cv_url text;
+alter table public.applications add column if not exists status text default 'pending';
+
+alter table public.applications drop constraint if exists applications_status_check;
+alter table public.applications
+  add constraint applications_status_check
+  check (status in ('pending', 'accepted', 'declined'));
 
 alter table public.applications enable row level security;
 
--- Public Submission Policies
-drop policy if exists "Allow public to submit applications" on public.applications;
-create policy "Allow public to submit applications" on public.applications for insert to public with check (true);
+drop policy if exists "Public can submit applications" on public.applications;
+create policy "Public can submit applications" on public.applications
+for insert
+with check (true);
 
--- Admin View Policies
-drop policy if exists "Allow admins to view applications" on public.applications;
-create policy "Allow admins to view applications" on public.applications for select to authenticated 
-using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
+drop policy if exists "Admins can view applications" on public.applications;
+create policy "Admins can view applications" on public.applications
+for select
+using (public.is_admin_request());
 
--- ==========================================
--- 4. USER GOALS
--- ==========================================
-create table if not exists public.user_goals (
-  id uuid default gen_random_uuid() primary key,
-  user_id uuid references auth.users on delete cascade not null,
-  title text not null,
-  is_completed boolean default false,
-  target_date date,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
+drop policy if exists "Admins can update applications" on public.applications;
+create policy "Admins can update applications" on public.applications
+for update
+using (public.is_admin_request())
+with check (public.is_admin_request());
 
-alter table public.user_goals enable row level security;
-
-drop policy if exists "Users can manage own goals" on public.user_goals;
-create policy "Users can manage own goals" on public.user_goals for all using (auth.uid() = user_id);
+drop policy if exists "Admins can delete applications" on public.applications;
+create policy "Admins can delete applications" on public.applications
+for delete
+using (public.is_admin_request());
 
 -- ==========================================
--- 5. CONTACT MESSAGES
+-- 4. PROFILE SELF-HEAL RPC
 -- ==========================================
-create table if not exists public.contact_messages (
-  id uuid default gen_random_uuid() primary key,
-  name text not null,
-  email text not null,
-  message text not null,
-  created_at timestamp with time zone default timezone('utc'::text, now())
-);
+create or replace function public.ensure_my_profile()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid := auth.uid();
+  jwt_email text := lower(coalesce(auth.jwt() ->> 'email', ''));
+  full_name text;
+  first_name text;
+  last_name text;
+begin
+  if current_user_id is null then
+    return;
+  end if;
 
-alter table public.contact_messages enable row level security;
+  first_name := nullif(trim(coalesce(auth.jwt() -> 'user_metadata' ->> 'first_name', '')), '');
+  last_name := nullif(trim(coalesce(auth.jwt() -> 'user_metadata' ->> 'last_name', '')), '');
+  full_name := coalesce(
+    nullif(trim(coalesce(auth.jwt() -> 'user_metadata' ->> 'full_name', '')), ''),
+    nullif(trim(concat_ws(' ', first_name, last_name)), ''),
+    nullif(split_part(jwt_email, '@', 1), ''),
+    'User'
+  );
 
-drop policy if exists "Anyone can submit a contact message" on public.contact_messages;
-create policy "Anyone can submit a contact message" on public.contact_messages for insert with check (true);
+  insert into public.profiles (
+    id, email, full_name, phone, dob, role, is_approved, is_declined, created_at, updated_at
+  )
+  values (
+    current_user_id,
+    jwt_email,
+    full_name,
+    nullif(trim(coalesce(auth.jwt() -> 'user_metadata' ->> 'phone', '')), ''),
+    nullif(trim(coalesce(auth.jwt() -> 'user_metadata' ->> 'dob', '')), ''),
+    case
+      when jwt_email in ('damayojholmer@gmail.com', 'jholmerdamayo@gmail.com') then 'admin'
+      when lower(coalesce(auth.jwt() -> 'user_metadata' ->> 'role', '')) in ('intern', 'employee')
+        then lower(auth.jwt() -> 'user_metadata' ->> 'role')
+      else 'intern'
+    end,
+    case
+      when jwt_email in ('damayojholmer@gmail.com', 'jholmerdamayo@gmail.com') then true
+      else false
+    end,
+    false,
+    timezone('utc'::text, now()),
+    timezone('utc'::text, now())
+  )
+  on conflict (id) do nothing;
+end;
+$$;
+
+grant execute on function public.ensure_my_profile() to authenticated;
 
 -- ==========================================
--- 6. AUTOMATION (Trigger)
+-- 5. SIGNUP TRIGGER
 -- ==========================================
 create or replace function public.handle_new_user()
-returns trigger as $$
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
 begin
-  insert into public.profiles (id, full_name, avatar_url, email, role, is_approved)
+  insert into public.profiles (
+    id, email, full_name, avatar_url, phone, dob, role, is_approved, is_declined, created_at, updated_at
+  )
   values (
     new.id,
-    new.raw_user_meta_data->>'full_name',
-    new.raw_user_meta_data->>'avatar_url',
     new.email,
-    case when new.email = 'damayojholmer@gmail.com' then 'admin' else 'applicant' end,
-    case when new.email = 'damayojholmer@gmail.com' then true else false end
-  );
+    coalesce(
+      nullif(trim(new.raw_user_meta_data->>'full_name'), ''),
+      nullif(trim(concat_ws(' ', new.raw_user_meta_data->>'first_name', new.raw_user_meta_data->>'last_name')), ''),
+      split_part(new.email, '@', 1)
+    ),
+    new.raw_user_meta_data->>'avatar_url',
+    new.raw_user_meta_data->>'phone',
+    new.raw_user_meta_data->>'dob',
+    case
+      when lower(coalesce(new.email, '')) in ('damayojholmer@gmail.com', 'jholmerdamayo@gmail.com') then 'admin'
+      when lower(coalesce(new.raw_user_meta_data->>'role', '')) in ('intern', 'employee')
+        then lower(new.raw_user_meta_data->>'role')
+      else 'intern'
+    end,
+    case
+      when lower(coalesce(new.email, '')) in ('damayojholmer@gmail.com', 'jholmerdamayo@gmail.com') then true
+      else false
+    end,
+    false,
+    coalesce(new.created_at, timezone('utc'::text, now())),
+    timezone('utc'::text, now())
+  )
+  on conflict (id) do update
+  set
+    email = excluded.email,
+    full_name = excluded.full_name,
+    avatar_url = excluded.avatar_url,
+    phone = excluded.phone,
+    dob = excluded.dob,
+    role = case
+      when public.profiles.is_approved = true then public.profiles.role
+      else excluded.role
+    end,
+    is_approved = case
+      when public.profiles.is_approved = true then true
+      else excluded.is_approved
+    end,
+    updated_at = timezone('utc'::text, now());
+
   return new;
 end;
-$$ language plpgsql security definer;
+$$;
 
-drop trigger if exists on_auth_user_created on auth.users;
+do $$
+declare t record;
+begin
+  for t in
+    select tr.tgname
+    from pg_trigger tr
+    join pg_proc p on p.oid = tr.tgfoid
+    where tr.tgrelid = 'auth.users'::regclass
+      and not tr.tgisinternal
+      and p.proname = 'handle_new_user'
+  loop
+    execute format('drop trigger if exists %I on auth.users', t.tgname);
+  end loop;
+end $$;
+
 create trigger on_auth_user_created
 after insert on auth.users
 for each row execute procedure public.handle_new_user();
 
 -- ==========================================
--- 7. ADMIN PERMISSIONS
+-- 6. BACKFILL ALL EXISTING AUTH USERS
 -- ==========================================
-update public.profiles 
-set role = 'admin', is_approved = true 
-where email = 'damayojholmer@gmail.com';
+insert into public.profiles (
+  id, email, full_name, avatar_url, phone, dob, role, is_approved, is_declined, created_at, updated_at
+)
+select
+  u.id,
+  u.email,
+  coalesce(
+    nullif(trim(u.raw_user_meta_data->>'full_name'), ''),
+    nullif(trim(concat_ws(' ', u.raw_user_meta_data->>'first_name', u.raw_user_meta_data->>'last_name')), ''),
+    split_part(u.email, '@', 1)
+  ),
+  u.raw_user_meta_data->>'avatar_url',
+  u.raw_user_meta_data->>'phone',
+  u.raw_user_meta_data->>'dob',
+  case
+    when lower(coalesce(u.email, '')) in ('damayojholmer@gmail.com', 'jholmerdamayo@gmail.com') then 'admin'
+    when lower(coalesce(u.raw_user_meta_data->>'role', '')) in ('intern', 'employee')
+      then lower(u.raw_user_meta_data->>'role')
+    else 'intern'
+  end,
+  case
+    when lower(coalesce(u.email, '')) in ('damayojholmer@gmail.com', 'jholmerdamayo@gmail.com') then true
+    else false
+  end,
+  false,
+  coalesce(u.created_at, timezone('utc'::text, now())),
+  timezone('utc'::text, now())
+from auth.users u
+on conflict (id) do update
+set
+  email = excluded.email,
+  full_name = coalesce(public.profiles.full_name, excluded.full_name),
+  avatar_url = coalesce(public.profiles.avatar_url, excluded.avatar_url),
+  phone = coalesce(public.profiles.phone, excluded.phone),
+  dob = coalesce(public.profiles.dob, excluded.dob),
+  role = case
+    when lower(coalesce(excluded.email, '')) in ('damayojholmer@gmail.com', 'jholmerdamayo@gmail.com') then 'admin'
+    when coalesce(public.profiles.is_approved, false) = true then coalesce(public.profiles.role, 'intern')
+    when lower(coalesce(public.profiles.role, '')) in ('intern', 'employee') then lower(public.profiles.role)
+    else excluded.role
+  end,
+  is_approved = case
+    when lower(coalesce(excluded.email, '')) in ('damayojholmer@gmail.com', 'jholmerdamayo@gmail.com') then true
+    else coalesce(public.profiles.is_approved, false)
+  end,
+  updated_at = timezone('utc'::text, now());
 
 -- ==========================================
--- 8. DATA AUDIT (Verification)
+-- 7. FORCE ADMIN ACCOUNT(S)
 -- ==========================================
-select p.full_name, p.email, p.role, p.is_approved 
-from public.profiles p
-order by p.role desc;
+update public.profiles
+set role = 'admin', is_approved = true, updated_at = timezone('utc'::text, now())
+where lower(email) in ('damayojholmer@gmail.com', 'jholmerdamayo@gmail.com');
 
+-- ==========================================
+-- 8. VERIFICATION
+-- ==========================================
+select id, profile_code, email, role, is_approved, created_at
+from public.profiles
+order by created_at desc nulls last;
 
+select id, first_name, last_name, email, phone, project_applied, status, created_at
+from public.applications
+order by created_at desc nulls last;
+
+select id, profile_code, email, role, is_approved
+from public.profiles
+where coalesce(is_approved, false) = false
+  and coalesce(is_declined, false) = false
+  and lower(coalesce(email, '')) not in ('damayojholmer@gmail.com', 'jholmerdamayo@gmail.com')
+order by created_at desc nulls last;
