@@ -9,6 +9,10 @@ import { useAuth } from '../context/AuthContext';
 import ProfileSidebar from './ProfileSidebar';
 
 const ADMIN_EMAILS = ['damayojholmer@gmail.com', 'jholmerdamayo@gmail.com'];
+const EMAILJS_SERVICE_ID = 'service_gtody9o';
+const EMAILJS_ACCEPT_TEMPLATE_ID = 'template_0qxt2rp';
+const EMAILJS_DECLINE_TEMPLATE_ID = 'template_10tdhwj';
+const EMAILJS_API_URL = 'https://api.emailjs.com/api/v1.0/email/send';
 
 const isMissingDeclinedColumnError = (error: any) => {
   const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
@@ -64,10 +68,16 @@ const Admin: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [internSearchTerm, setInternSearchTerm] = useState('');
+  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
+  const [pendingSearchTerm, setPendingSearchTerm] = useState('');
+  const [expandedManageFrames, setExpandedManageFrames] = useState<Array<'interns' | 'pending' | 'employees'>>([]);
   const [roleFilter, setRoleFilter] = useState('All');
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const [applications, setApplications] = useState<any[]>([]);
   const [selectedApplicant, setSelectedApplicant] = useState<any>(null);
+  const [applicantActionNotice, setApplicantActionNotice] = useState('');
+  const [isUpdatingApplicantStatus, setIsUpdatingApplicantStatus] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [actioningUserId, setActioningUserId] = useState<string | null>(null);
@@ -77,6 +87,10 @@ const Admin: React.FC = () => {
   const [evaluationComment, setEvaluationComment] = useState('');
   const [evaluationNotice, setEvaluationNotice] = useState('');
   const [isSavingEvaluation, setIsSavingEvaluation] = useState(false);
+  const [reportRoleView, setReportRoleView] = useState<'intern' | 'employee' | 'all'>('all');
+  const [reportSearchTerm, setReportSearchTerm] = useState('');
+  const [reportSortBy, setReportSortBy] = useState<'consistency' | 'completion' | 'efficiency'>('consistency');
+  const [reportNotice, setReportNotice] = useState('');
   const roleDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const userGrowthData = [
@@ -213,6 +227,73 @@ const Admin: React.FC = () => {
       title: 'At risk',
       detail: 'Low progress indicators. Immediate intervention and clear action plan are recommended.',
     };
+  };
+
+  const clampPercentage = (value: any, fallback = 55) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    return Math.max(0, Math.min(100, numeric));
+  };
+
+  const getConsistencyScore = (profileItem: any) => {
+    const completion = clampPercentage(profileItem?.completion, 55);
+    const efficiency = clampPercentage(profileItem?.efficiency, 55);
+    const hoursSpent = Math.max(0, Number(profileItem?.hours_spent || 0));
+    const hoursBoost = Math.min(10, Math.round(hoursSpent / 10));
+    const evaluation = (profileItem?.evaluation_result || '').toString().toLowerCase();
+    const grade = (profileItem?.grade || '').toString().toLowerCase();
+    const evaluationBoost = evaluation === 'pass' || grade === 'pass' ? 6 : evaluation === 'fail' || grade === 'fail' ? -6 : 0;
+
+    return Math.max(0, Math.min(100, Math.round(completion * 0.5 + efficiency * 0.4 + hoursBoost + evaluationBoost)));
+  };
+
+  const getConsistencyBand = (score: number) => {
+    if (score >= 85) return 'Excellent';
+    if (score >= 70) return 'Stable';
+    if (score >= 55) return 'Watch';
+    return 'At Risk';
+  };
+
+  const matchesFirstNameSearch = (profile: any, searchValue: string) => {
+    const term = searchValue.trim().toLowerCase();
+    if (term === '') return true;
+    return getFirstName(profile).toLowerCase().startsWith(term);
+  };
+
+  const toggleManageFrameExpansion = (frame: 'interns' | 'pending' | 'employees') => {
+    setExpandedManageFrames((prev) => {
+      if (prev.includes(frame)) {
+        if (prev.length >= 2 && prev[0] === frame) {
+          // If multiple frames are expanded, clicking the top one sends it to bottom.
+          return [...prev.slice(1), frame];
+        }
+        return prev.filter((item) => item !== frame);
+      }
+
+      if (prev.length === 0) return [frame];
+      if (prev.length === 1) return [...prev, frame];
+      if (prev.length === 2) return [...prev, frame];
+
+      return prev;
+    });
+  };
+
+  const isManageFrameExpanded = (frame: 'interns' | 'pending' | 'employees') =>
+    expandedManageFrames.includes(frame);
+
+  const getManageFrameLayoutClass = (frame: 'interns' | 'pending' | 'employees') => {
+    const firstExpanded = expandedManageFrames[0];
+    const secondExpanded = expandedManageFrames[1];
+    const thirdExpanded = expandedManageFrames[2];
+
+    if (frame === firstExpanded) return 'lg:col-span-2 lg:order-1';
+    if (frame === secondExpanded) return 'lg:col-span-2 lg:order-2';
+    if (frame === thirdExpanded) return 'lg:col-span-2 lg:order-3';
+
+    if (expandedManageFrames.length === 0) return '';
+    if (frame === 'interns') return 'lg:order-3';
+    if (frame === 'pending') return 'lg:order-4';
+    return 'lg:order-5';
   };
 
   const handleApproveUser = async (pendingUser: any) => {
@@ -583,22 +664,129 @@ const Admin: React.FC = () => {
     );
   };
 
+  const sendApplicationDecisionEmail = async (application: any, status: 'accepted' | 'declined') => {
+    const publicKey = (import.meta.env.VITE_EMAILJS_PUBLIC_KEY as string | undefined)?.trim() || '';
+    if (!publicKey) {
+      throw new Error('Missing VITE_EMAILJS_PUBLIC_KEY in .env');
+    }
+
+    const templateId = status === 'accepted' ? EMAILJS_ACCEPT_TEMPLATE_ID : EMAILJS_DECLINE_TEMPLATE_ID;
+    const applicantName = `${application?.first_name || ''} ${application?.last_name || ''}`.trim() || 'Applicant';
+    const applicantEmail = (application?.email || '').toString().trim();
+    if (!applicantEmail) {
+      throw new Error('Applicant email is empty');
+    }
+    const decisionLabel = status === 'accepted' ? 'Accepted' : 'Declined';
+
+    const basePayload = {
+      service_id: EMAILJS_SERVICE_ID,
+      template_id: templateId,
+      template_params: {
+        name: applicantName,
+        title: application?.project_applied || 'Lifewood Position',
+        email: applicantEmail,
+        to_name: applicantName,
+        to_email: applicantEmail,
+        user_email: applicantEmail,
+        recipient: applicantEmail,
+        reply_to: applicantEmail,
+        applicant_name: applicantName,
+        applicant_email: applicantEmail,
+        project_applied: application?.project_applied || '',
+        application_status: decisionLabel,
+        decision_message:
+          status === 'accepted'
+            ? `Congratulations ${applicantName}, your application has been accepted.`
+            : `Thank you ${applicantName} for applying. Your application was not selected this cycle.`,
+        decision_date: new Date().toLocaleDateString(),
+      },
+    };
+
+    const sendRequest = async (payload: Record<string, any>) => {
+      const response = await fetch(EMAILJS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) return;
+
+      const rawError = await response.text().catch(() => '');
+      let parsedError = rawError || `EmailJS request failed (${response.status})`;
+
+      try {
+        const jsonError = JSON.parse(rawError);
+        parsedError = jsonError?.message || jsonError?.text || parsedError;
+      } catch (_) {
+        // Keep raw text when JSON parsing fails.
+      }
+
+      throw new Error(parsedError);
+    };
+
+    try {
+      await sendRequest({
+        ...basePayload,
+        public_key: publicKey,
+      });
+    } catch (firstError) {
+      try {
+        await sendRequest({
+          ...basePayload,
+          user_id: publicKey,
+        });
+      } catch (secondError) {
+        const firstMessage = firstError instanceof Error ? firstError.message : '';
+        const secondMessage = secondError instanceof Error ? secondError.message : '';
+        throw new Error(secondMessage || firstMessage || 'EmailJS failed');
+      }
+    }
+  };
+
   if (authLoading) return null;
 
   if (!user) return null;
-  const handleUpdateApplicationStatus = async (id: string, status: 'accepted' | 'declined') => {
+  const handleUpdateApplicationStatus = async (application: any, status: 'accepted' | 'declined') => {
+    if (!application?.id) return;
+    setIsUpdatingApplicantStatus(true);
+    setApplicantActionNotice('');
+
     try {
       const { error } = await supabase
         .from('applications')
         .update({ status })
-        .eq('id', id);
+        .eq('id', application.id);
       
       if (error) throw error;
       
-      setApplications((prev) => prev.map((app) => app.id === id ? { ...app, status } : app));
+      setApplications((prev) => prev.map((app) => app.id === application.id ? { ...app, status } : app));
+
+      try {
+        await sendApplicationDecisionEmail(application, status);
+        setApplicantActionNotice(
+          status === 'accepted'
+            ? 'Application accepted and acceptance email sent.'
+            : 'Application declined and decline email sent.'
+        );
+      } catch (emailError) {
+        console.error('EmailJS send error:', emailError);
+        const errorMessage =
+          emailError instanceof Error && emailError.message
+            ? emailError.message.replace(/\s+/g, ' ').slice(0, 180)
+            : 'Unknown EmailJS error';
+        setApplicantActionNotice(
+          status === 'accepted'
+            ? `Application accepted, but acceptance email was not sent. (${errorMessage})`
+            : `Application declined, but decline email was not sent. (${errorMessage})`
+        );
+      }
+
       setSelectedApplicant(null);
     } catch (error) {
       console.error('Error updating application status:', error);
+      setApplicantActionNotice('Unable to update application status right now.');
+    } finally {
+      setIsUpdatingApplicantStatus(false);
     }
   };
 
@@ -608,6 +796,74 @@ const Admin: React.FC = () => {
   const evaluationInsight = selectedEvaluationUser ? getAiInsight(selectedEvaluationUser) : null;
   const approvedInternProfiles = allProfiles.filter((p) => p?.is_approved === true && isInternLikeRole(getNormalizedRole(p)));
   const approvedEmployeeProfiles = allProfiles.filter((p) => p?.is_approved === true && isEmployeeLikeRole(getNormalizedRole(p)));
+  const manageInternProfiles = allProfiles.filter((p) => (p.role?.toLowerCase() === 'intern' || p.role?.toLowerCase() === 'user') && p.is_approved === true);
+  const manageEmployeeProfiles = allProfiles.filter((p) => (p.role?.toLowerCase() === 'employee' || p.role?.toLowerCase() === 'admin') && p.is_approved === true);
+  const filteredManageInternProfiles = manageInternProfiles.filter((p) => matchesFirstNameSearch(p, internSearchTerm));
+  const filteredManageEmployeeProfiles = manageEmployeeProfiles.filter((p) => matchesFirstNameSearch(p, employeeSearchTerm));
+  const filteredManagePendingProfiles = pendingProfiles.filter((p) => matchesFirstNameSearch(p, pendingSearchTerm));
+  const internReportRows = approvedInternProfiles.map((profileItem) => ({
+    id: String(profileItem.id),
+    name: profileItem.full_name || getFirstName(profileItem),
+    firstName: getFirstName(profileItem),
+    email: profileItem.email || 'N/A',
+    role: 'Intern',
+    completion: clampPercentage(profileItem?.completion, 55),
+    efficiency: clampPercentage(profileItem?.efficiency, 55),
+    consistency: getConsistencyScore(profileItem),
+    scoreBand: getConsistencyBand(getConsistencyScore(profileItem)),
+  }));
+  const employeeReportRows = approvedEmployeeProfiles.map((profileItem) => ({
+    id: String(profileItem.id),
+    name: profileItem.full_name || getFirstName(profileItem),
+    firstName: getFirstName(profileItem),
+    email: profileItem.email || 'N/A',
+    role: 'Employee',
+    completion: clampPercentage(profileItem?.completion, 55),
+    efficiency: clampPercentage(profileItem?.efficiency, 55),
+    consistency: getConsistencyScore(profileItem),
+    scoreBand: getConsistencyBand(getConsistencyScore(profileItem)),
+  }));
+  const reportRowsByRole =
+    reportRoleView === 'intern'
+      ? internReportRows
+      : reportRoleView === 'employee'
+      ? employeeReportRows
+      : [...internReportRows, ...employeeReportRows];
+  const sortedReportRows = [...reportRowsByRole].sort((a, b) => {
+    if (reportSortBy === 'completion') return b.completion - a.completion;
+    if (reportSortBy === 'efficiency') return b.efficiency - a.efficiency;
+    return b.consistency - a.consistency;
+  });
+  const filteredReportRows = sortedReportRows.filter((row) => {
+    const query = reportSearchTerm.trim().toLowerCase();
+    if (!query) return true;
+    return row.name.toLowerCase().includes(query) || row.email.toLowerCase().includes(query);
+  });
+  const reportChartData = filteredReportRows.slice(0, 8).map((row) => ({
+    name: row.firstName,
+    consistency: row.consistency,
+    completion: row.completion,
+    efficiency: row.efficiency,
+  }));
+  const internConsistencyAverage = internReportRows.length
+    ? Math.round(internReportRows.reduce((sum, row) => sum + row.consistency, 0) / internReportRows.length)
+    : 0;
+  const employeeConsistencyAverage = employeeReportRows.length
+    ? Math.round(employeeReportRows.reduce((sum, row) => sum + row.consistency, 0) / employeeReportRows.length)
+    : 0;
+  const activeConsistencyAverage = filteredReportRows.length
+    ? Math.round(filteredReportRows.reduce((sum, row) => sum + row.consistency, 0) / filteredReportRows.length)
+    : 0;
+  const activeHighConsistencyCount = filteredReportRows.filter((row) => row.consistency >= 80).length;
+  const activeAtRiskCount = filteredReportRows.filter((row) => row.consistency < 55).length;
+  const consistencyTrendData = [
+    { month: 'Jan', interns: Math.max(0, internConsistencyAverage - 8), employees: Math.max(0, employeeConsistencyAverage - 6) },
+    { month: 'Feb', interns: Math.max(0, internConsistencyAverage - 5), employees: Math.max(0, employeeConsistencyAverage - 4) },
+    { month: 'Mar', interns: Math.max(0, internConsistencyAverage - 3), employees: Math.max(0, employeeConsistencyAverage - 2) },
+    { month: 'Apr', interns: Math.max(0, internConsistencyAverage - 1), employees: Math.max(0, employeeConsistencyAverage) },
+    { month: 'May', interns: Math.min(100, internConsistencyAverage + 2), employees: Math.min(100, employeeConsistencyAverage + 2) },
+    { month: 'Jun', interns: Math.min(100, internConsistencyAverage + 4), employees: Math.min(100, employeeConsistencyAverage + 3) },
+  ];
   const officialMemberProfiles = allProfiles.filter(isOfficialMemberProfile);
   const sortedOfficialMemberProfiles = [...officialMemberProfiles].sort((a, b) =>
     getFirstName(a).localeCompare(getFirstName(b), undefined, { sensitivity: 'base' })
@@ -680,6 +936,51 @@ const Admin: React.FC = () => {
     } finally {
       setIsSavingEvaluation(false);
     }
+  };
+
+  const handleReportAction = (action: 'Reminder' | 'Coaching', row: { name: string }) => {
+    setReportNotice(`${action} action prepared for ${row.name}.`);
+    window.setTimeout(() => {
+      setReportNotice('');
+    }, 2500);
+  };
+
+  const handleOpenEvaluation = (row: { id: string; role: string }) => {
+    setEvaluationRoleFilter(row.role.toLowerCase() === 'employee' ? 'employee' : 'intern');
+    setSelectedEvaluationUserId(row.id);
+    setActiveTab('Evaluation');
+  };
+
+  const handleExportConsistencyCsv = () => {
+    if (!filteredReportRows.length) {
+      setReportNotice('No rows to export with current filters.');
+      return;
+    }
+
+    const csvHeader = 'Name,Email,Role,Consistency,Completion,Efficiency,Band';
+    const csvRows = filteredReportRows.map((row) =>
+      [
+        `"${row.name.replace(/"/g, '""')}"`,
+        `"${row.email.replace(/"/g, '""')}"`,
+        row.role,
+        row.consistency,
+        row.completion,
+        row.efficiency,
+        row.scoreBand,
+      ].join(',')
+    );
+
+    const csvContent = [csvHeader, ...csvRows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `consistency-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setReportNotice('Report exported successfully.');
   };
 
   const menuItems = [
@@ -765,14 +1066,18 @@ const Admin: React.FC = () => {
             <ul className="space-y-2 list-none p-0">
               {settingsItems.map((item) => (
                 <li key={item.label}>
-                  <a
-                    href="#"
+                  <button
+                    onClick={() => setActiveTab(item.label)}
                     title={item.label}
-                    className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all no-underline ${darkMode ? 'text-slate-300 hover:text-emerald-300 hover:bg-emerald-500/15' : 'text-gray-600 hover:text-emerald-700 hover:bg-emerald-500/12'}`}
+                    className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all ${
+                      activeTab === item.label
+                        ? (darkMode ? 'bg-emerald-500/20 text-emerald-300 border-l-4 border-emerald-400' : 'bg-emerald-500/15 text-emerald-700 border-l-4 border-emerald-600')
+                        : (darkMode ? 'text-slate-300 hover:text-emerald-300 hover:bg-emerald-500/15' : 'text-gray-600 hover:text-emerald-700 hover:bg-emerald-500/12')
+                    }`}
                   >
                     <span className="text-lg">{item.icon}</span>
                     {!isSidebarCollapsed && <span className="text-sm font-medium">{item.label}</span>}
-                  </a>
+                  </button>
                 </li>
               ))}
               <li>
@@ -792,7 +1097,7 @@ const Admin: React.FC = () => {
         {/* User Profile */}
         <div className={`mt-auto pt-6 border-t ${darkMode ? 'border-white/20' : 'border-emerald-200/60'}`}>
           {isSidebarCollapsed ? (
-            <div className="flex flex-col items-center gap-3">
+            <div className="flex items-center justify-center gap-2">
               <button
                 onClick={() => setIsProfileOpen(true)}
                 className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold hover:scale-105 transition-transform"
@@ -810,10 +1115,10 @@ const Admin: React.FC = () => {
               </button>
               <button
                 onClick={handleSignOut}
-                className={`transition-colors ${darkMode ? 'text-slate-500 hover:text-emerald-400' : 'text-gray-400 hover:text-emerald-600'}`}
+                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${darkMode ? 'text-slate-500 hover:text-emerald-400 hover:bg-slate-700/60' : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50'}`}
                 title="Sign out"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
               </button>
             </div>
           ) : (
@@ -1312,20 +1617,258 @@ const Admin: React.FC = () => {
             </div>
           </div>
         ) : activeTab === 'Reports' ? (
-          <div className="bg-white rounded-[40px] p-12 shadow-sm border border-black/5 min-h-[600px] flex items-center justify-center">
-            <div className="text-center">
-              <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 mx-auto mb-6">
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <div className="space-y-8">
+            <div className={`rounded-[40px] p-8 border shadow-sm transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+              <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-5">
+                <div>
+                  <h2 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-[#1a1a1a]'}`}>Consistency Reports</h2>
+                  <p className={`mt-1 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                    Performance stability insights for interns and employees.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className={`flex p-1 rounded-xl ${darkMode ? 'bg-slate-700/70' : 'bg-emerald-50'}`}>
+                    {[
+                      { label: 'All', value: 'all' as const },
+                      { label: 'Interns', value: 'intern' as const },
+                      { label: 'Employees', value: 'employee' as const },
+                    ].map((item) => (
+                      <button
+                        key={item.value}
+                        onClick={() => setReportRoleView(item.value)}
+                        title={`Show ${item.label.toLowerCase()} report`}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${
+                          reportRoleView === item.value
+                            ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30'
+                            : (darkMode ? 'text-slate-300 hover:text-emerald-300' : 'text-gray-500 hover:text-emerald-700')
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={reportSearchTerm}
+                      onChange={(e) => setReportSearchTerm(e.target.value)}
+                      placeholder="Search name or email..."
+                      className={`w-60 max-w-full px-4 py-2 rounded-xl border text-sm focus:outline-none ${
+                        darkMode ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder:text-slate-500' : 'bg-gray-50 border-emerald-200 text-gray-900 placeholder:text-gray-400'
+                      }`}
+                    />
+                  </div>
+
+                  <select
+                    value={reportSortBy}
+                    onChange={(e) => setReportSortBy(e.target.value as 'consistency' | 'completion' | 'efficiency')}
+                    title="Sort report table"
+                    className={`px-3 py-2 rounded-xl border text-sm focus:outline-none ${
+                      darkMode ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-emerald-200 text-gray-700'
+                    }`}
+                  >
+                    <option value="consistency">Sort: Consistency</option>
+                    <option value="completion">Sort: Completion</option>
+                    <option value="efficiency">Sort: Efficiency</option>
+                  </select>
+
+                  <button
+                    onClick={handleExportConsistencyCsv}
+                    title="Download CSV report"
+                    className="px-4 py-2 rounded-xl bg-[#1a2e1a] text-white text-xs font-bold uppercase tracking-widest hover:bg-[#152515]"
+                  >
+                    Export CSV
+                  </button>
+                </div>
               </div>
-              <h2 className="text-3xl font-bold mb-2">Reports</h2>
-              <p className="text-gray-500">this is Reports</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+              <div
+                title="Average consistency score of current filtered users"
+                className={`rounded-[28px] p-6 border shadow-sm transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}
+              >
+                <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Average Consistency</p>
+                <p className={`text-4xl font-black mt-3 ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>{activeConsistencyAverage}%</p>
+              </div>
+              <div
+                title="Users currently hitting consistency 80 or above"
+                className={`rounded-[28px] p-6 border shadow-sm transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}
+              >
+                <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>High Consistency</p>
+                <p className={`text-4xl font-black mt-3 ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{activeHighConsistencyCount}</p>
+              </div>
+              <div
+                title="Users with consistency below 55"
+                className={`rounded-[28px] p-6 border shadow-sm transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}
+              >
+                <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Needs Intervention</p>
+                <p className={`text-4xl font-black mt-3 ${darkMode ? 'text-orange-300' : 'text-orange-600'}`}>{activeAtRiskCount}</p>
+              </div>
+              <div
+                title="Total users included in this report view"
+                className={`rounded-[28px] p-6 border shadow-sm transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}
+              >
+                <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Total In View</p>
+                <p className={`text-4xl font-black mt-3 ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{filteredReportRows.length}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+              <div className={`xl:col-span-3 rounded-[32px] p-6 border shadow-sm transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className={`text-lg font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Consistency Trend</h3>
+                  <span className={`text-xs ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>Last 6 months</span>
+                </div>
+                <div className="h-[280px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={consistencyTrendData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#334155' : '#e5e7eb'} />
+                      <XAxis dataKey="month" stroke={darkMode ? '#94a3b8' : '#6b7280'} />
+                      <YAxis stroke={darkMode ? '#94a3b8' : '#6b7280'} domain={[0, 100]} />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="interns" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} />
+                      <Line type="monotone" dataKey="employees" stroke="#1e293b" strokeWidth={3} dot={{ r: 4 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className={`xl:col-span-2 rounded-[32px] p-6 border shadow-sm transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <h3 className={`text-lg font-bold mb-5 ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Top Consistency Scores</h3>
+                <div className="h-[280px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={reportChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#334155' : '#e5e7eb'} />
+                      <XAxis dataKey="name" stroke={darkMode ? '#94a3b8' : '#6b7280'} />
+                      <YAxis stroke={darkMode ? '#94a3b8' : '#6b7280'} domain={[0, 100]} />
+                      <Tooltip />
+                      <Bar dataKey="consistency" fill="#10b981" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            <div className={`rounded-[36px] p-6 border shadow-sm transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
+                <h3 className={`text-lg font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Detailed Consistency Table</h3>
+                <div className="flex items-center gap-3">
+                  {reportNotice && (
+                    <span className={`text-xs font-medium ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                      {reportNotice}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => {
+                      setReportSearchTerm('');
+                      setReportSortBy('consistency');
+                      setReportRoleView('all');
+                    }}
+                    title="Reset report filters"
+                    className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors ${
+                      darkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Reset Filters
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className={`border-b ${darkMode ? 'border-slate-700' : 'border-black/5'}`}>
+                      <th className={`py-3 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Name</th>
+                      <th className={`py-3 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Role</th>
+                      <th className={`py-3 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Consistency</th>
+                      <th className={`py-3 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Completion</th>
+                      <th className={`py-3 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Efficiency</th>
+                      <th className={`py-3 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Band</th>
+                      <th className={`py-3 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredReportRows.map((row) => (
+                      <tr key={row.id} className={`border-b ${darkMode ? 'border-slate-700 hover:bg-slate-700/40' : 'border-black/5 hover:bg-gray-50'} transition-colors`}>
+                        <td className="py-4">
+                          <div>
+                            <p className={`text-sm font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{row.name}</p>
+                            <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{row.email}</p>
+                          </div>
+                        </td>
+                        <td className={`py-4 text-sm ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>{row.role}</td>
+                        <td className="py-4">
+                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                            row.consistency >= 80
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : row.consistency >= 55
+                              ? 'bg-amber-100 text-amber-700'
+                              : 'bg-red-100 text-red-700'
+                          }`}>
+                            {row.consistency}%
+                          </span>
+                        </td>
+                        <td className={`py-4 text-sm ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>{row.completion}%</td>
+                        <td className={`py-4 text-sm ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>{row.efficiency}%</td>
+                        <td className={`py-4 text-sm font-medium ${darkMode ? 'text-slate-200' : 'text-gray-800'}`}>{row.scoreBand}</td>
+                        <td className="py-4">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleOpenEvaluation(row)}
+                              title="Open this user in Evaluation tab"
+                              className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-700"
+                            >
+                              Evaluate
+                            </button>
+                            <button
+                              onClick={() => handleReportAction('Reminder', row)}
+                              title="Prepare reminder action"
+                              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest ${
+                                darkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                              }`}
+                            >
+                              Reminder
+                            </button>
+                            <button
+                              onClick={() => handleReportAction('Coaching', row)}
+                              title="Prepare coaching action"
+                              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest ${
+                                darkMode ? 'bg-orange-500/20 text-orange-300 hover:bg-orange-500/30' : 'bg-orange-50 text-orange-700 hover:bg-orange-100'
+                              }`}
+                            >
+                              Coach
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredReportRows.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className={`py-8 text-center text-sm italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>
+                          No report data matches your filters.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         ) : activeTab === 'Applicants' ? (
           <div className="space-y-8">
             <div className="flex justify-between items-center mb-6">
-              <h2 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-[#1a1a1a]'}`}>New Applicants</h2>
-              <p className={darkMode ? 'text-slate-400' : 'text-gray-500'}>Applications from JoinModal</p>
+              <div>
+                <h2 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-[#1a1a1a]'}`}>New Applicants</h2>
+                <p className={darkMode ? 'text-slate-400' : 'text-gray-500'}>Applications from JoinModal</p>
+              </div>
+              {applicantActionNotice ? (
+                <p className={`text-xs font-semibold ${applicantActionNotice.toLowerCase().includes('not sent') || applicantActionNotice.toLowerCase().includes('unable') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-700')}`}>
+                  {applicantActionNotice}
+                </p>
+              ) : null}
             </div>
 
             <div className={`rounded-[40px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
@@ -1352,6 +1895,7 @@ const Admin: React.FC = () => {
                         <td className="py-4">
                           <button 
                             onClick={() => app.status === 'pending' && setSelectedApplicant(app)}
+                            title={app.status === 'pending' ? 'Review application and choose Accept or Decline' : `Application is ${app.status}`}
                             className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full transition-all ${
                               app.status === 'pending' ? 'bg-orange-50 text-orange-600 hover:scale-105' :
                               app.status === 'accepted' ? 'bg-emerald-50 text-emerald-600' :
@@ -1452,16 +1996,20 @@ const Admin: React.FC = () => {
 
                     <div className="flex gap-4">
                       <button 
-                        onClick={() => handleUpdateApplicationStatus(selectedApplicant.id, 'declined')}
-                        className={`flex-1 py-4 rounded-2xl font-bold text-sm transition-all ${darkMode ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+                        onClick={() => handleUpdateApplicationStatus(selectedApplicant, 'declined')}
+                        disabled={isUpdatingApplicantStatus}
+                        title="Decline this applicant and send decline email"
+                        className={`flex-1 py-4 rounded-2xl font-bold text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed ${darkMode ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
                       >
-                        Decline
+                        {isUpdatingApplicantStatus ? 'Processing...' : 'Decline'}
                       </button>
                       <button 
-                        onClick={() => handleUpdateApplicationStatus(selectedApplicant.id, 'accepted')}
-                        className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition-all"
+                        onClick={() => handleUpdateApplicationStatus(selectedApplicant, 'accepted')}
+                        disabled={isUpdatingApplicantStatus}
+                        title="Accept this applicant and send acceptance email"
+                        className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        Accept
+                        {isUpdatingApplicantStatus ? 'Processing...' : 'Accept'}
                       </button>
                     </div>
                   </motion.div>
@@ -1481,16 +2029,46 @@ const Admin: React.FC = () => {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
               {/* Interns Table */}
-              <div className={`rounded-[40px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
-                <div className="flex items-center gap-3 mb-6">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${darkMode ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-100 text-emerald-600'}`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <div className={`rounded-[40px] p-8 shadow-sm border transition-colors ${getManageFrameLayoutClass('interns')} ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <div className="flex items-center justify-between mb-4 gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${darkMode ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-100 text-emerald-600'}`}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    </div>
+                    <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Interns</h3>
                   </div>
-                  <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Interns</h3>
+                  <div className="flex items-center gap-2">
+                    <div className="group relative">
+                      <div className="relative w-10 h-10 group-hover:w-64 focus-within:w-64 transition-all duration-300 overflow-hidden">
+                        <div className={`pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 ${darkMode ? 'text-slate-400' : 'text-gray-400'}`}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Search first name..."
+                          value={internSearchTerm}
+                          onChange={(e) => setInternSearchTerm(e.target.value)}
+                          className={`w-full h-full pl-10 pr-4 py-2 border rounded-xl text-sm focus:outline-none transition-all duration-300 ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-400 focus:border-emerald-400' : 'bg-gray-50 border-emerald-200 text-gray-900 placeholder:text-gray-400 focus:border-emerald-400'} opacity-0 group-hover:opacity-100 focus:opacity-100`}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleManageFrameExpansion('interns')}
+                      title={isManageFrameExpanded('interns') ? 'Collapse frame' : 'Expand frame'}
+                      className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600' : 'bg-gray-50 border-emerald-200 text-gray-500 hover:bg-emerald-50 hover:text-emerald-600'}`}
+                    >
+                      {isManageFrameExpanded('interns') ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto overflow-y-auto max-h-[36rem] pr-1">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className={`border-b ${darkMode ? 'border-slate-700' : 'border-black/5'}`}>
@@ -1503,7 +2081,7 @@ const Admin: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {allProfiles.filter(p => (p.role?.toLowerCase() === 'intern' || p.role?.toLowerCase() === 'user') && p.is_approved === true).map((p, index) => (
+                      {filteredManageInternProfiles.map((p, index) => (
                         <tr key={p.id} className={`border-b transition-colors ${darkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-black/5 hover:bg-gray-50'}`}>
                           <td className={`py-4 text-xs font-mono ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                             {formatManageProfileCode(p, index, 'intern')}
@@ -1529,7 +2107,7 @@ const Admin: React.FC = () => {
                           </td>
                         </tr>
                       ))}
-                      {allProfiles.filter(p => (p.role?.toLowerCase() === 'intern' || p.role?.toLowerCase() === 'user') && p.is_approved === true).length === 0 && (
+                      {filteredManageInternProfiles.length === 0 && (
                         <tr>
                           <td colSpan={6} className={`py-8 text-center text-sm italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>No interns found</td>
                         </tr>
@@ -1540,14 +2118,44 @@ const Admin: React.FC = () => {
               </div>
 
               {/* Pending Approvals Table */}
-              <div className={`rounded-[40px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
-                <div className="flex items-center gap-3 mb-6">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${darkMode ? 'bg-orange-500/10 text-orange-400' : 'bg-orange-100 text-orange-600'}`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+              <div className={`rounded-[40px] p-8 shadow-sm border transition-colors ${getManageFrameLayoutClass('pending')} ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <div className="flex items-center justify-between mb-4 gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${darkMode ? 'bg-orange-500/10 text-orange-400' : 'bg-orange-100 text-orange-600'}`}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                    </div>
+                    <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Pending Approvals</h3>
                   </div>
-                  <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Pending Approvals</h3>
+                  <div className="flex items-center gap-2">
+                    <div className="group relative">
+                      <div className="relative w-10 h-10 group-hover:w-64 focus-within:w-64 transition-all duration-300 overflow-hidden">
+                        <div className={`pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 ${darkMode ? 'text-slate-400' : 'text-gray-400'}`}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Search first name..."
+                          value={pendingSearchTerm}
+                          onChange={(e) => setPendingSearchTerm(e.target.value)}
+                          className={`w-full h-full pl-10 pr-4 py-2 border rounded-xl text-sm focus:outline-none transition-all duration-300 ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-400 focus:border-emerald-400' : 'bg-gray-50 border-emerald-200 text-gray-900 placeholder:text-gray-400 focus:border-emerald-400'} opacity-0 group-hover:opacity-100 focus:opacity-100`}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleManageFrameExpansion('pending')}
+                      title={isManageFrameExpanded('pending') ? 'Collapse frame' : 'Expand frame'}
+                      className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600' : 'bg-gray-50 border-emerald-200 text-gray-500 hover:bg-emerald-50 hover:text-emerald-600'}`}
+                    >
+                      {isManageFrameExpanded('pending') ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto overflow-y-auto max-h-[36rem] pr-1">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className={`border-b ${darkMode ? 'border-slate-700' : 'border-black/5'}`}>
@@ -1560,7 +2168,7 @@ const Admin: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {pendingProfiles.map((p, index) => (
+                      {filteredManagePendingProfiles.map((p, index) => (
                         <tr key={p.id} className={`border-b transition-colors ${darkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-black/5 hover:bg-gray-50'}`}>
                           <td className={`py-4 text-xs font-mono ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                             {formatPendingProfileCode(index)}
@@ -1596,7 +2204,7 @@ const Admin: React.FC = () => {
                           </td>
                         </tr>
                       ))}
-                      {pendingProfiles.length === 0 && (
+                      {filteredManagePendingProfiles.length === 0 && (
                         <tr>
                           <td colSpan={6} className={`py-8 text-center text-sm italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>No pending approvals</td>
                         </tr>
@@ -1607,12 +2215,42 @@ const Admin: React.FC = () => {
               </div>
 
               {/* Employees Table */}
-              <div className={`rounded-[40px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
-                <div className="flex items-center gap-3 mb-6">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${darkMode ? 'bg-[#1a2e1a] text-emerald-400' : 'bg-[#1a2e1a] text-emerald-400'}`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <div className={`rounded-[40px] p-8 shadow-sm border transition-colors ${getManageFrameLayoutClass('employees')} ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <div className="flex items-center justify-between mb-4 gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${darkMode ? 'bg-[#1a2e1a] text-emerald-400' : 'bg-[#1a2e1a] text-emerald-400'}`}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    </div>
+                    <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Employees</h3>
                   </div>
-                  <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Employees</h3>
+                  <div className="flex items-center gap-2">
+                    <div className="group relative">
+                      <div className="relative w-10 h-10 group-hover:w-64 focus-within:w-64 transition-all duration-300 overflow-hidden">
+                        <div className={`pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 ${darkMode ? 'text-slate-400' : 'text-gray-400'}`}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Search first name..."
+                          value={employeeSearchTerm}
+                          onChange={(e) => setEmployeeSearchTerm(e.target.value)}
+                          className={`w-full h-full pl-10 pr-4 py-2 border rounded-xl text-sm focus:outline-none transition-all duration-300 ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-400 focus:border-emerald-400' : 'bg-gray-50 border-emerald-200 text-gray-900 placeholder:text-gray-400 focus:border-emerald-400'} opacity-0 group-hover:opacity-100 focus:opacity-100`}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleManageFrameExpansion('employees')}
+                      title={isManageFrameExpanded('employees') ? 'Collapse frame' : 'Expand frame'}
+                      className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600' : 'bg-gray-50 border-emerald-200 text-gray-500 hover:bg-emerald-50 hover:text-emerald-600'}`}
+                    >
+                      {isManageFrameExpanded('employees') ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
@@ -1627,7 +2265,7 @@ const Admin: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {allProfiles.filter(p => (p.role?.toLowerCase() === 'employee' || p.role?.toLowerCase() === 'admin') && p.is_approved === true).map((p, index) => (
+                      {filteredManageEmployeeProfiles.map((p, index) => (
                         <tr key={p.id} className={`border-b transition-colors ${darkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-black/5 hover:bg-gray-50'}`}>
                           <td className={`py-4 text-xs font-mono ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                             {formatManageProfileCode(p, index, 'employee')}
@@ -1653,7 +2291,7 @@ const Admin: React.FC = () => {
                           </td>
                         </tr>
                       ))}
-                      {allProfiles.filter(p => (p.role?.toLowerCase() === 'employee' || p.role?.toLowerCase() === 'admin') && p.is_approved === true).length === 0 && (
+                      {filteredManageEmployeeProfiles.length === 0 && (
                         <tr>
                           <td colSpan={6} className={`py-8 text-center text-sm italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>No employees found</td>
                         </tr>

@@ -136,14 +136,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(currentUser);
       
       if (currentUser) {
-        setLoading(true);
+        // Avoid flashing loading UI on background token refresh
+        const shouldShowLoading =
+          event === 'SIGNED_IN' ||
+          event === 'USER_UPDATED' ||
+          event === 'PASSWORD_RECOVERY';
+
+        if (shouldShowLoading) setLoading(true);
         try {
           await ensureProfile();
           await fetchProfile(currentUser.id, 5000);
         } catch (err) {
           console.error('Error fetching profile on auth change:', err);
         } finally {
-          if (mounted) setLoading(false);
+          if (mounted && shouldShowLoading) setLoading(false);
         }
       } else {
         setProfile(null);

@@ -1,7 +1,6 @@
 
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import { englishContent, LANGUAGES, sampleSpanishTranslation } from '../content';
-import { GoogleGenAI } from '@google/genai';
 
 interface LanguageContextType {
     language: string;
@@ -30,20 +29,23 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
 
             setLoading(true);
             try {
-                const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-                const model = 'gemini-3-flash-preview';
                 const langName = LANGUAGES[language as keyof typeof LANGUAGES]?.name || 'this language';
-                
-                const prompt = `Translate the following JSON object's string values from English to ${langName}. Do not translate the keys. Maintain the exact JSON structure and return only the translated JSON object.\n\n${JSON.stringify(englishContent)}`;
-                
-                const response = await ai.models.generateContent({
-                  model,
-                  contents: prompt,
-                  config: { responseMimeType: "application/json" }
+                const response = await fetch('/api/translate', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    targetLanguage: langName,
+                    source: englishContent,
+                  }),
                 });
 
-                const translated = JSON.parse(response.text.trim());
-                setTranslations(translated);
+                const data = await response.json().catch(() => ({} as Record<string, any>));
+                if (!response.ok || !(data as any)?.translations) {
+                  throw new Error((data as any)?.error || `Translation request failed (${response.status})`);
+                }
+                setTranslations((data as any).translations);
 
             } catch (error) {
                 console.error("Failed to fetch translations:", error);

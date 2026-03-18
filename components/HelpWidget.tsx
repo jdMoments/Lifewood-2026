@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { GoogleGenAI } from "@google/genai";
 
 interface Message {
   role: 'user' | 'model';
@@ -34,23 +33,29 @@ const HelpWidget: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const chat = ai.chats.create({
-        model: "gemini-3-flash-preview",
-        config: {
-          systemInstruction: "You are a helpful, professional, and friendly AI assistant for Lifewood AI Solutions. Your goal is to help users understand Lifewood's services, projects, and mission. Keep your responses concise and informative. If you don't know something about Lifewood, suggest they contact us via the contact form on the website.",
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ message: userMessage }),
       });
+      const data = await response.json().catch(() => ({} as Record<string, any>));
 
-      // Convert messages to Gemini format
-      // Note: sendMessage only accepts the message string, but we can provide history if we use the chat object correctly.
-      // For simplicity in this turn, we'll just send the current message, but a better implementation would use history.
-      const response = await chat.sendMessage({ message: userMessage });
-      
-      setMessages(prev => [...prev, { role: 'model', text: response.text || "I'm sorry, I couldn't process that." }]);
+      if (!response.ok) {
+        throw new Error((data as any)?.error || `Chat request failed (${response.status})`);
+      }
+
+      const modelText = typeof (data as any)?.text === 'string' ? (data as any).text : '';
+      setMessages(prev => [...prev, { role: 'model', text: modelText || "I'm sorry, I couldn't process that." }]);
     } catch (error) {
       console.error("Chat error:", error);
-      setMessages(prev => [...prev, { role: 'model', text: "Sorry, I'm having trouble connecting right now. Please try again later." }]);
+      const errorMessage = error instanceof Error ? error.message : '';
+      if (errorMessage.includes('Missing GEMINI_API_KEY')) {
+        setMessages(prev => [...prev, { role: 'model', text: "Chatbot server is not configured yet. Add GEMINI_API_KEY to your .env (or .env.local) and restart the app." }]);
+      } else {
+        setMessages(prev => [...prev, { role: 'model', text: "Sorry, I'm having trouble connecting right now. Please try again later." }]);
+      }
     } finally {
       setIsLoading(false);
     }
