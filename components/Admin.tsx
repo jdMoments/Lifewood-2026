@@ -78,6 +78,8 @@ const Admin: React.FC = () => {
   const [selectedApplicant, setSelectedApplicant] = useState<any>(null);
   const [applicantActionNotice, setApplicantActionNotice] = useState('');
   const [isUpdatingApplicantStatus, setIsUpdatingApplicantStatus] = useState(false);
+  const [openApplicantActionMenuId, setOpenApplicantActionMenuId] = useState<string | null>(null);
+  const [applicantRowActionId, setApplicantRowActionId] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [actioningUserId, setActioningUserId] = useState<string | null>(null);
@@ -92,6 +94,7 @@ const Admin: React.FC = () => {
   const [reportSortBy, setReportSortBy] = useState<'consistency' | 'completion' | 'efficiency'>('consistency');
   const [reportNotice, setReportNotice] = useState('');
   const roleDropdownRef = useRef<HTMLDivElement | null>(null);
+  const applicantActionMenuRef = useRef<HTMLDivElement | null>(null);
 
   const userGrowthData = [
     { name: 'Jan', users: 40 },
@@ -175,6 +178,14 @@ const Admin: React.FC = () => {
     if (normalized === 'employee' || normalized === 'employees') return 'employee';
     if (normalized === 'intern' || normalized === 'interns' || normalized === 'user') return 'intern';
     return 'intern';
+  };
+
+  const normalizeApplicationStatus = (status?: string): 'pending' | 'accepted' | 'declined' | 'archived' => {
+    const normalized = (status || '').toString().trim().toLowerCase();
+    if (normalized === 'accepted' || normalized === 'declined' || normalized === 'archived' || normalized === 'pending') {
+      return normalized;
+    }
+    return 'pending';
   };
 
   const getEvaluationCandidates = () =>
@@ -526,6 +537,9 @@ const Admin: React.FC = () => {
       if (roleDropdownRef.current && !roleDropdownRef.current.contains(event.target as Node)) {
         setIsRoleDropdownOpen(false);
       }
+      if (applicantActionMenuRef.current && !applicantActionMenuRef.current.contains(event.target as Node)) {
+        setOpenApplicantActionMenuId(null);
+      }
     };
 
     document.addEventListener('mousedown', handleOutsideClick);
@@ -743,7 +757,7 @@ const Admin: React.FC = () => {
     }
   };
 
-  if (authLoading) return null;
+  if (authLoading && !user) return null;
 
   if (!user) return null;
   const handleUpdateApplicationStatus = async (application: any, status: 'accepted' | 'declined') => {
@@ -790,9 +804,74 @@ const Admin: React.FC = () => {
     }
   };
 
+  const handleArchiveApplication = async (application: any) => {
+    if (!application?.id) return;
+
+    const currentStatus = normalizeApplicationStatus(application.status);
+    if (currentStatus === 'archived') {
+      setApplicantActionNotice('Application is already archived.');
+      setOpenApplicantActionMenuId(null);
+      return;
+    }
+
+    setApplicantRowActionId(application.id);
+    setApplicantActionNotice('');
+
+    try {
+      const { error } = await supabase
+        .from('applications')
+        .update({ status: 'archived' })
+        .eq('id', application.id);
+
+      if (error) throw error;
+
+      setApplications((prev) => prev.map((app) => (
+        app.id === application.id ? { ...app, status: 'archived' } : app
+      )));
+      setOpenApplicantActionMenuId(null);
+      setApplicantActionNotice('Application archived successfully.');
+    } catch (error) {
+      console.error('Error archiving application:', error);
+      setApplicantActionNotice('Unable to archive application right now.');
+    } finally {
+      setApplicantRowActionId(null);
+    }
+  };
+
+  const handleDeleteApplication = async (application: any) => {
+    if (!application?.id) return;
+    if (!confirm('Are you sure you want to delete this application?')) return;
+
+    setApplicantRowActionId(application.id);
+    setApplicantActionNotice('');
+
+    try {
+      const { error } = await supabase
+        .from('applications')
+        .delete()
+        .eq('id', application.id);
+
+      if (error) throw error;
+
+      setApplications((prev) => prev.filter((app) => app.id !== application.id));
+      if (selectedApplicant?.id === application.id) {
+        setSelectedApplicant(null);
+      }
+      setOpenApplicantActionMenuId(null);
+      setApplicantActionNotice('Application deleted successfully.');
+    } catch (error) {
+      console.error('Error deleting application:', error);
+      setApplicantActionNotice('Unable to delete application right now.');
+    } finally {
+      setApplicantRowActionId(null);
+    }
+  };
+
   const evaluationCandidates = getEvaluationCandidates();
   const selectedEvaluationUser =
     evaluationCandidates.find((candidate) => candidate.id === selectedEvaluationUserId) || null;
+  const pendingApplications = applications.filter((app) => normalizeApplicationStatus(app.status) === 'pending');
+  const reviewedApplications = applications.filter((app) => normalizeApplicationStatus(app.status) !== 'pending');
   const evaluationInsight = selectedEvaluationUser ? getAiInsight(selectedEvaluationUser) : null;
   const approvedInternProfiles = allProfiles.filter((p) => p?.is_approved === true && isInternLikeRole(getNormalizedRole(p)));
   const approvedEmployeeProfiles = allProfiles.filter((p) => p?.is_approved === true && isEmployeeLikeRole(getNormalizedRole(p)));
@@ -1872,6 +1951,12 @@ const Admin: React.FC = () => {
             </div>
 
             <div className={`rounded-[40px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Pending Applicants</h3>
+                <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-orange-300' : 'text-orange-600'}`}>
+                  {pendingApplications.length} pending
+                </span>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -1885,7 +1970,7 @@ const Admin: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {applications.map((app) => (
+                    {pendingApplications.map((app) => (
                       <tr key={app.id} className={`border-b transition-colors ${darkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-black/5 hover:bg-gray-50'}`}>
                         <td className={`py-4 font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{app.first_name} {app.last_name}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.email}</td>
@@ -1893,23 +1978,117 @@ const Admin: React.FC = () => {
                         <td className="py-4 text-sm font-bold text-lw-green">{app.project_applied}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>{new Date(app.created_at).toLocaleDateString()}</td>
                         <td className="py-4">
-                          <button 
-                            onClick={() => app.status === 'pending' && setSelectedApplicant(app)}
-                            title={app.status === 'pending' ? 'Review application and choose Accept or Decline' : `Application is ${app.status}`}
-                            className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full transition-all ${
-                              app.status === 'pending' ? 'bg-orange-50 text-orange-600 hover:scale-105' :
-                              app.status === 'accepted' ? 'bg-emerald-50 text-emerald-600' :
-                              'bg-red-50 text-red-600'
-                            }`}
+                          <button
+                            onClick={() => setSelectedApplicant(app)}
+                            title="Review application and choose Accept or Decline"
+                            className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full transition-all ${darkMode ? 'bg-orange-500/10 text-orange-300 hover:bg-orange-500/20 hover:scale-105' : 'bg-orange-50 text-orange-600 hover:scale-105'}`}
                           >
-                            {app.status}
+                            pending
                           </button>
                         </td>
                       </tr>
                     ))}
-                    {applications.length === 0 && (
+                    {pendingApplications.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="py-12 text-center text-gray-400 italic">No applications found</td>
+                        <td colSpan={6} className={`py-12 text-center italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>No pending applications</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className={`rounded-[40px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Processed Applicants</h3>
+                <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                  {reviewedApplications.length} records
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className={`border-b ${darkMode ? 'border-slate-700' : 'border-black/5'}`}>
+                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Name</th>
+                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Email</th>
+                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Position</th>
+                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Date</th>
+                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Status</th>
+                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest text-right ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reviewedApplications.map((app) => (
+                      <tr key={app.id} className={`border-b transition-colors ${darkMode ? 'border-slate-700 hover:bg-slate-700/50' : 'border-black/5 hover:bg-gray-50'}`}>
+                        <td className={`py-4 font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{app.first_name} {app.last_name}</td>
+                        <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.email}</td>
+                        <td className="py-4 text-sm font-bold text-lw-green">{app.project_applied}</td>
+                        <td className={`py-4 text-sm ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>{new Date(app.updated_at || app.created_at).toLocaleDateString()}</td>
+                        <td className="py-4">
+                          <span
+                            className={`inline-flex text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full ${
+                              normalizeApplicationStatus(app.status) === 'accepted'
+                                ? darkMode
+                                  ? 'bg-emerald-500/10 text-emerald-300'
+                                  : 'bg-emerald-50 text-emerald-600'
+                                : normalizeApplicationStatus(app.status) === 'declined'
+                                  ? darkMode
+                                    ? 'bg-red-500/10 text-red-300'
+                                    : 'bg-red-50 text-red-600'
+                                  : darkMode
+                                    ? 'bg-slate-700 text-slate-300'
+                                    : 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {normalizeApplicationStatus(app.status)}
+                          </span>
+                        </td>
+                        <td className="py-4 text-right">
+                          <div className="relative inline-flex" ref={openApplicantActionMenuId === app.id ? applicantActionMenuRef : null}>
+                            <button
+                              type="button"
+                              onClick={() => setOpenApplicantActionMenuId((prev) => (prev === app.id ? null : app.id))}
+                              disabled={applicantRowActionId === app.id}
+                              title="More actions"
+                              className={`w-8 h-8 rounded-full border inline-flex items-center justify-center transition-colors disabled:opacity-50 ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-gray-200 text-gray-500 hover:bg-gray-100'}`}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="1"/>
+                                <circle cx="12" cy="5" r="1"/>
+                                <circle cx="12" cy="19" r="1"/>
+                              </svg>
+                            </button>
+                            {openApplicantActionMenuId === app.id && (
+                              <div className={`absolute right-full mr-2 top-1/2 -translate-y-1/2 w-32 rounded-xl border shadow-xl z-20 p-1 ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleArchiveApplication(app)}
+                                  disabled={applicantRowActionId === app.id || normalizeApplicationStatus(app.status) === 'archived'}
+                                  className={`w-full text-left px-3 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 ${
+                                    darkMode
+                                      ? 'text-slate-200 hover:bg-slate-800'
+                                      : 'text-gray-700 hover:bg-gray-100'
+                                  }`}
+                                >
+                                  Archive
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteApplication(app)}
+                                  disabled={applicantRowActionId === app.id}
+                                  className={`w-full text-left px-3 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 ${darkMode ? 'text-red-300 hover:bg-red-500/10' : 'text-red-600 hover:bg-red-50'}`}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {reviewedApplications.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className={`py-12 text-center italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>No processed applications yet</td>
                       </tr>
                     )}
                   </tbody>

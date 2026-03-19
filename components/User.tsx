@@ -3,6 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import ProfileSidebar from './ProfileSidebar';
+import Aurora from './Aurora';
+
+type UserSection = 'Dashboard' | 'My Progress' | 'Tasks' | 'Performance' | 'Settings';
 
 const User: React.FC = () => {
   const { user, loading: authLoading, signOut: authSignOut } = useAuth();
@@ -11,16 +14,31 @@ const User: React.FC = () => {
   const [newGoalTitle, setNewGoalTitle] = useState('');
   const [isAddingGoal, setIsAddingGoal] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<UserSection>('Dashboard');
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const [currentDateTime, setCurrentDateTime] = useState(new Date());
+  const [calendarDate, setCalendarDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('userDarkMode') === 'true';
     }
     return false;
   });
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('userDarkMode', darkMode.toString());
   }, [darkMode]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setCurrentDateTime(new Date());
+    }, 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -88,57 +106,163 @@ const User: React.FC = () => {
     setIsAddingGoal(false);
   };
 
-  if (authLoading) return null;
+  const isSameDay = (firstDate: Date, secondDate: Date) =>
+    firstDate.getFullYear() === secondDate.getFullYear() &&
+    firstDate.getMonth() === secondDate.getMonth() &&
+    firstDate.getDate() === secondDate.getDate();
+
+  const getDateKey = (date: Date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+  type HolidayType = 'Regular Holiday' | 'Special Non-Working Day' | 'Special Working Day';
+
+  const PHILIPPINE_HOLIDAYS: Array<{ month: number; day: number; name: string; type: HolidayType; backgroundImageUrl?: string }> = [
+    { month: 0, day: 1, name: "New Year's Day", type: 'Regular Holiday' },
+    { month: 1, day: 17, name: 'Chinese New Year', type: 'Special Non-Working Day', backgroundImageUrl: 'https://www.teachingnomad.com/wp-content/uploads/2024/12/chinese-newyear.jpg' },
+    { month: 1, day: 25, name: 'EDSA People Power Anniversary', type: 'Special Working Day' },
+    { month: 2, day: 20, name: "Eid'l Fitr (Feast of Ramadhan)", type: 'Regular Holiday', backgroundImageUrl: 'https://www.holidaysmart.com/sites/default/files/holidays/images/islam-muslim%20holidays-Eid-al-Fitr-cv.jpg' },
+    { month: 3, day: 2, name: 'Maundy Thursday', type: 'Regular Holiday' },
+    { month: 3, day: 3, name: 'Good Friday', type: 'Regular Holiday' },
+    { month: 3, day: 4, name: 'Black Saturday', type: 'Special Non-Working Day' },
+    { month: 3, day: 9, name: 'Araw ng Kagitingan (Day of Valor)', type: 'Regular Holiday' },
+    { month: 4, day: 1, name: 'Labor Day', type: 'Regular Holiday' },
+    { month: 4, day: 27, name: "Eid'l Adha (Feast of Sacrifice)", type: 'Regular Holiday', backgroundImageUrl: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSRfMg6pKvTODL8L7wBztsJkZYkpqV0JCgutA&s' },
+    { month: 5, day: 12, name: 'Independence Day', type: 'Regular Holiday', backgroundImageUrl: 'https://as2.ftcdn.net/jpg/03/70/52/69/1000_F_370526905_JpNGf4aOZw0QDDGSG9u8tAZrLJOASbJb.jpg' },
+    { month: 7, day: 21, name: 'Ninoy Aquino Day', type: 'Special Non-Working Day', backgroundImageUrl: 'https://assets.bossjob.com/companies/19668/album-pictures/TgGJLMeWQONfNpPnm0bgkYK3AgoXqSsEzb8sANZC.png' },
+    { month: 7, day: 31, name: 'National Heroes Day', type: 'Regular Holiday', backgroundImageUrl: 'https://i.ebayimg.com/images/g/eoIAAOSw2WxlFu0G/s-l1200.jpg' },
+    { month: 10, day: 1, name: "All Saints' Day", type: 'Special Non-Working Day', backgroundImageUrl: 'https://www.farmersalmanac.com/wp-content/uploads/2020/11/book-of-remembrance-all-souls-as_259946483-1024x682-1-950x633.jpeg' },
+    { month: 10, day: 2, name: "All Souls' Day", type: 'Special Non-Working Day', backgroundImageUrl: 'https://www.farmersalmanac.com/wp-content/uploads/2020/11/book-of-remembrance-all-souls-as_259946483-1024x682-1-950x633.jpeg' },
+    { month: 10, day: 30, name: 'Bonifacio Day', type: 'Regular Holiday', backgroundImageUrl: 'https://media.diy.com/is/image/KingfisherDigital/grandeco-life-wood-panels-green-wallpaper-a49204~5411012465988_02c_MP?$MOB_PREV$&$width=600&$height=600' },
+    { month: 11, day: 8, name: 'Feast of the Immaculate Conception', type: 'Special Non-Working Day', backgroundImageUrl: 'https://framerusercontent.com/images/jbg1aNUPAjdSRv4pNOBijvBME.png?width=1800&height=1488' },
+    { month: 11, day: 24, name: 'Christmas Eve', type: 'Special Non-Working Day', backgroundImageUrl: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS1Mwq5fLIZnONs7hymvfSDQykzt-LVWCkXRg&s' },
+    { month: 11, day: 25, name: 'Christmas Day', type: 'Regular Holiday', backgroundImageUrl: 'https://www.thefactsite.com/wp-content/uploads/2021/12/christmas-day-facts.jpg' },
+    { month: 11, day: 30, name: 'Rizal Day', type: 'Regular Holiday', backgroundImageUrl: 'https://lens.usercontent.google.com/banana?agsi=CmdnbG9iYWw6OjAwMDA1NWNmZWM3MDAyNmQ6MDAwMDAwZWI6MTozZjVlNzM4MGM4NzM5YWQ4OjAwMDA1NWNmZWM3MDAyNmQ6MDAwMDAxODE0OWEwMzM2ODowMDA2NGQ1YWRiMzliYmJmEAI=' },
+    { month: 11, day: 31, name: 'Last Day of the Year', type: 'Special Non-Working Day' },
+  ];
+
+  const getHolidayEntry = (date: Date) => {
+    const month = date.getMonth();
+    const day = date.getDate();
+
+    return PHILIPPINE_HOLIDAYS.find((holiday) => holiday.month === month && holiday.day === day) || null;
+  };
+
+  const getHolidayEntryByDateKey = (dateKey: string) => {
+    const [yearPart, monthPart, dayPart] = dateKey.split('-');
+    const year = Number(yearPart);
+    const month = Number(monthPart) - 1;
+    const day = Number(dayPart);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+    return PHILIPPINE_HOLIDAYS.find((holiday) => holiday.month === month && holiday.day === day) || null;
+  };
+
+  const getCalendarCells = (): Array<Date | null> => {
+    const year = calendarDate.getFullYear();
+    const month = calendarDate.getMonth();
+    const firstWeekday = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells: Array<Date | null> = [];
+
+    for (let i = 0; i < firstWeekday; i += 1) {
+      cells.push(null);
+    }
+
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      cells.push(new Date(year, month, day));
+    }
+
+    while (cells.length % 7 !== 0) {
+      cells.push(null);
+    }
+
+    return cells;
+  };
+
+  const calendarCells = getCalendarCells();
+  const todayDate = currentDateTime;
+  const selectedDateHoliday = selectedDateKey ? getHolidayEntryByDateKey(selectedDateKey) : null;
+  const todayHoliday = getHolidayEntry(todayDate);
+  const activeFrameHoliday = selectedDateHoliday || todayHoliday;
+  const defaultHolidayBackgroundUrl = 'https://www.holidaysmart.com/sites/default/files/holidays/images/islam-muslim%20holidays-Eid-al-Fitr-cv.jpg';
+  const activeHolidayBackgroundUrl = activeFrameHoliday?.backgroundImageUrl || (activeFrameHoliday ? defaultHolidayBackgroundUrl : null);
+  const shouldShowHolidayFrameBackground = Boolean(activeHolidayBackgroundUrl);
+  const monthNumberLabel = String(calendarDate.getMonth() + 1).padStart(2, '0');
+  const monthNameLabel = calendarDate.toLocaleDateString('en-US', { month: 'long' });
+  const yearLabel = calendarDate.getFullYear();
+  const goToPreviousMonth = () => setCalendarDate((prevDate) => new Date(prevDate.getFullYear(), prevDate.getMonth() - 1, 1));
+  const goToNextMonth = () => setCalendarDate((prevDate) => new Date(prevDate.getFullYear(), prevDate.getMonth() + 1, 1));
+
+  if (authLoading && !user) return null;
 
   if (!user) return null;
-  const menuItems = [
-    { icon: '📊', label: 'Dashboard', active: true },
-    { icon: '🕒', label: 'My Progress' },
-    { icon: '📝', label: 'Tasks' },
-    { icon: '📈', label: 'Performance' },
+  const menuItems: Array<{ label: UserSection }> = [
+    { label: 'Dashboard' },
+    { label: 'My Progress' },
+    { label: 'Tasks' },
+    { label: 'Performance' },
   ];
 
-  const settingsItems = [
-    { icon: '⚙️', label: 'Settings' },
+  const settingsItems: Array<{ label: UserSection }> = [
+    { label: 'Settings' },
   ];
+
+  const sectionCopy: Record<Exclude<UserSection, 'Dashboard'>, string> = {
+    'My Progress': 'This is My Progress',
+    'Tasks': 'This is Task',
+    'Performance': 'This is a Performance',
+    'Settings': 'This is Settings',
+  };
 
   return (
     <div className={`min-h-screen flex font-sans transition-colors ${darkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-[#1a1a1a]'}`}>
       {/* Sidebar */}
-      <aside className={`w-64 border-r flex flex-col p-6 fixed h-full z-20 transition-colors ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-emerald-100'}`}>
-        <div 
-          className="flex items-center justify-between mb-12"
-        >
-          <div 
-            className="flex items-center gap-3 cursor-pointer group"
-            onClick={() => setIsProfileOpen(true)}
-          >
-            <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white font-bold group-hover:scale-110 transition-transform">
-              ⚡
+      <aside className={`${isSidebarCollapsed ? 'w-24' : 'w-64'} border-r flex flex-col p-6 fixed h-full z-20 transition-all duration-300 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-emerald-100'}`}>
+        <div className={`mb-12 ${isSidebarCollapsed ? 'space-y-3' : ''}`}>
+          <div className={`flex items-center ${isSidebarCollapsed ? 'flex-col gap-3' : 'justify-between gap-3'}`}>
+            <div
+              className={`flex items-center cursor-pointer group ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}
+              onClick={() => setIsProfileOpen(true)}
+            >
+              <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white font-bold group-hover:scale-110 transition-transform">
+                ⚡
+              </div>
+              {!isSidebarCollapsed && (
+                <>
+                  <span className={`font-bold text-xl tracking-tight transition-colors ${darkMode ? 'text-white group-hover:text-emerald-400' : 'group-hover:text-emerald-600'}`}>Lifewood</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold transition-colors ${darkMode ? 'bg-slate-800 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>User</span>
+                </>
+              )}
             </div>
-            <span className={`font-bold text-xl tracking-tight transition-colors ${darkMode ? 'text-white group-hover:text-emerald-400' : 'group-hover:text-emerald-600'}`}>Lifewood</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold transition-colors ${darkMode ? 'bg-slate-800 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>User</span>
+
+            <button
+              onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+              className={`rounded-lg p-1 transition-colors ${darkMode ? 'hover:bg-slate-800' : 'hover:bg-emerald-50'}`}
+              title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              <span className="flex flex-col justify-center gap-0.5 w-5 h-5">
+                <span className={`h-0.5 rounded-sm transition-all ${darkMode ? 'bg-slate-200' : 'bg-black'}`}></span>
+                <span className={`h-0.5 rounded-sm transition-all ${darkMode ? 'bg-slate-200' : 'bg-black'}`}></span>
+                <span className={`h-0.5 rounded-sm transition-all ${darkMode ? 'bg-slate-200' : 'bg-black'}`}></span>
+              </span>
+            </button>
           </div>
-
-          <button
-            onClick={() => setDarkMode(!darkMode)}
-            className={`p-2 rounded-xl transition-all ${darkMode ? 'bg-slate-800 text-yellow-400 hover:bg-slate-700' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
-          >
-            {darkMode ? '☀️' : '🌙'}
-          </button>
         </div>
-
         <div className="flex-grow">
           <div className="mb-8">
-            <p className={`text-[10px] font-bold uppercase tracking-widest mb-4 px-4 ${darkMode ? 'text-slate-500' : 'text-emerald-600/40'}`}>Main Menu</p>
+            {!isSidebarCollapsed && (
+              <p className={`text-[10px] font-bold uppercase tracking-widest mb-4 px-4 ${darkMode ? 'text-slate-500' : 'text-emerald-600/40'}`}>Main Menu</p>
+            )}
             <ul className="space-y-2 list-none p-0">
               {menuItems.map((item) => (
                 <li key={item.label}>
-                  <a
-                    href="#"
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all no-underline ${
-                      item.active
-                        ? darkMode 
+                  <button
+                    type="button"
+                    title={item.label}
+                    onClick={() => setActiveSection(item.label)}
+                    className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'text-left'} px-4 py-3 rounded-xl transition-all ${
+                      activeSection === item.label
+                        ? darkMode
                           ? 'bg-slate-800 text-emerald-400 border-r-4 border-emerald-400'
                           : 'bg-emerald-50 text-emerald-600 border-r-4 border-emerald-600'
                         : darkMode
@@ -146,30 +270,44 @@ const User: React.FC = () => {
                           : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50/50'
                     }`}
                   >
-                    <span className="text-lg">{item.icon}</span>
-                    <span className="text-sm font-medium">{item.label}</span>
-                  </a>
+                    {isSidebarCollapsed ? (
+                      <span className="text-sm font-bold">{item.label.charAt(0)}</span>
+                    ) : (
+                      <span className="text-sm font-medium">{item.label}</span>
+                    )}
+                  </button>
                 </li>
               ))}
             </ul>
           </div>
 
           <div>
-            <p className={`text-[10px] font-bold uppercase tracking-widest mb-4 px-4 ${darkMode ? 'text-slate-500' : 'text-emerald-600/40'}`}>Settings</p>
+            {!isSidebarCollapsed && (
+              <p className={`text-[10px] font-bold uppercase tracking-widest mb-4 px-4 ${darkMode ? 'text-slate-500' : 'text-emerald-600/40'}`}>Settings</p>
+            )}
             <ul className="space-y-2 list-none p-0">
               {settingsItems.map((item) => (
                 <li key={item.label}>
-                  <a
-                    href="#"
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all no-underline ${
-                      darkMode
-                        ? 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/50'
-                        : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50/50'
+                  <button
+                    type="button"
+                    title={item.label}
+                    onClick={() => setActiveSection(item.label)}
+                    className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'text-left'} px-4 py-3 rounded-xl transition-all ${
+                      activeSection === item.label
+                        ? darkMode
+                          ? 'bg-slate-800 text-emerald-400 border-r-4 border-emerald-400'
+                          : 'bg-emerald-50 text-emerald-600 border-r-4 border-emerald-600'
+                        : darkMode
+                          ? 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/50'
+                          : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50/50'
                     }`}
                   >
-                    <span className="text-lg">{item.icon}</span>
-                    <span className="text-sm font-medium">{item.label}</span>
-                  </a>
+                    {isSidebarCollapsed ? (
+                      <span className="text-sm font-bold">{item.label.charAt(0)}</span>
+                    ) : (
+                      <span className="text-sm font-medium">{item.label}</span>
+                    )}
+                  </button>
                 </li>
               ))}
             </ul>
@@ -178,9 +316,9 @@ const User: React.FC = () => {
 
         {/* User Profile */}
         <div className={`mt-auto pt-6 border-t ${darkMode ? 'border-slate-800' : 'border-emerald-100'}`}>
-          <div className={`flex items-center justify-between p-3 rounded-2xl ${darkMode ? 'bg-slate-800/50' : 'bg-emerald-50/50'}`}>
-            <div 
-              className="flex items-center gap-3 cursor-pointer group"
+          <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} p-3 rounded-2xl ${darkMode ? 'bg-slate-800/50' : 'bg-emerald-50/50'}`}>
+            <div
+              className={`flex items-center cursor-pointer group ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}
               onClick={() => setIsProfileOpen(true)}
             >
               <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold group-hover:scale-110 transition-transform">
@@ -194,25 +332,108 @@ const User: React.FC = () => {
                   user.email?.[0].toUpperCase() || 'U'
                 )}
               </div>
-              <div className="overflow-hidden">
-                <p className={`text-sm font-bold truncate transition-colors ${darkMode ? 'text-slate-100 group-hover:text-emerald-400' : 'group-hover:text-emerald-600'}`}>{profile?.full_name || user.email?.split('@')[0] || 'User'}</p>
-                <p className={`text-[10px] ${darkMode ? 'text-slate-500' : 'text-emerald-600/60'}`}>{profile?.role || 'User'}</p>
-              </div>
+              {!isSidebarCollapsed && (
+                <div className="overflow-hidden">
+                  <p className={`text-sm font-bold truncate transition-colors ${darkMode ? 'text-slate-100 group-hover:text-emerald-400' : 'group-hover:text-emerald-600'}`}>{profile?.full_name || user.email?.split('@')[0] || 'User'}</p>
+                  <p className={`text-[10px] ${darkMode ? 'text-slate-500' : 'text-emerald-600/60'}`}>{profile?.role || 'User'}</p>
+                </div>
+              )}
             </div>
-            <button 
-              onClick={handleSignOut}
-              className={`transition-colors ${darkMode ? 'text-slate-500 hover:text-emerald-400' : 'text-gray-400 hover:text-emerald-600'}`}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-            </button>
+            {!isSidebarCollapsed && (
+              <button
+                onClick={handleSignOut}
+                className={`transition-colors ${darkMode ? 'text-slate-500 hover:text-emerald-400' : 'text-gray-400 hover:text-emerald-600'}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              </button>
+            )}
           </div>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-grow ml-64 p-8">
+      <main className={`relative flex-grow ${isSidebarCollapsed ? 'ml-24' : 'ml-64'} p-8 overflow-hidden transition-all duration-300`}>
+        <div className="pointer-events-none absolute inset-0 opacity-35">
+          <Aurora
+            amplitude={0.9}
+            blend={0.45}
+            speed={0.8}
+          />
+        </div>
+
+        <div className="relative z-10">
+        <div className="flex justify-end mb-4 -mt-3 -mr-2">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              aria-label="Notifications"
+              className={`w-12 h-12 rounded-full border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-200'}`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.268 21a2 2 0 0 0 3.464 0"/>
+                <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .738-1.674C19.41 13.956 18 12.499 18 8a6 6 0 0 0-12 0c0 4.499-1.411 5.956-2.738 7.326"/>
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDarkMode(!darkMode)}
+              aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+              className={`w-12 h-12 rounded-full border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-emerald-400 hover:bg-slate-700' : 'bg-gray-100 border-gray-200 text-emerald-600 hover:bg-gray-200'}`}
+            >
+              {darkMode ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="4" />
+                  <path d="M12 2v2" />
+                  <path d="M12 20v2" />
+                  <path d="m4.93 4.93 1.41 1.41" />
+                  <path d="m17.66 17.66 1.41 1.41" />
+                  <path d="M2 12h2" />
+                  <path d="M20 12h2" />
+                  <path d="m6.34 17.66-1.41 1.41" />
+                  <path d="m19.07 4.93-1.41 1.41" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3a6 6 0 1 0 9 9 9 9 0 1 1-9-9" />
+                </svg>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsProfileOpen(true)}
+              className={`w-12 h-12 rounded-full border p-0.5 overflow-hidden transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-gray-100 border-gray-200 hover:bg-gray-200'}`}
+            >
+              {profile?.avatar_url ? (
+                <img
+                  src={profile.avatar_url}
+                  alt={profile?.full_name || 'Profile'}
+                  className="w-full h-full rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full rounded-full bg-violet-500 text-white flex items-center justify-center text-sm font-bold">
+                  {(profile?.full_name?.[0] || user?.email?.[0] || 'U').toUpperCase()}
+                </div>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {activeSection === 'Dashboard' ? (
+          <>
         {/* Hero Section */}
-        <section className={`relative rounded-[40px] p-12 text-white overflow-hidden mb-8 min-h-[450px] flex flex-col justify-between shadow-xl transition-all ${darkMode ? 'bg-slate-800 shadow-emerald-900/10' : 'bg-[#1a2e1a] shadow-emerald-900/20'}`}>
+        <section
+          className={`relative rounded-[40px] p-12 text-white overflow-hidden mb-8 min-h-[450px] flex flex-col justify-between shadow-xl transition-all ${shouldShowHolidayFrameBackground ? 'bg-[#1a2e1a] shadow-emerald-900/20' : darkMode ? 'bg-slate-800 shadow-emerald-900/10' : 'bg-[#1a2e1a] shadow-emerald-900/20'}`}
+          style={
+            shouldShowHolidayFrameBackground
+              ? {
+                  backgroundImage: `linear-gradient(rgba(12, 35, 22, 0.72), rgba(12, 35, 22, 0.72)), url("${activeHolidayBackgroundUrl}")`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  backgroundRepeat: 'no-repeat',
+                }
+              : undefined
+          }
+        >
           {/* Abstract Background Elements */}
           <div className="absolute top-0 right-0 w-full h-full opacity-30 pointer-events-none">
              <div className="absolute top-[-10%] right-[-5%] w-[60%] h-[120%] bg-gradient-to-l from-emerald-500/20 to-transparent blur-3xl rounded-full transform rotate-12"></div>
@@ -253,17 +474,25 @@ const User: React.FC = () => {
           </div>
 
           {/* Calendar Widget Overlay */}
-          <div className={`absolute top-12 right-12 backdrop-blur-md border rounded-[32px] p-6 w-[300px] hidden xl:block transition-colors ${darkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-white/5 border-white/10'}`}>
+          <div className={`absolute top-12 right-12 z-20 pointer-events-auto backdrop-blur-md border rounded-[32px] p-6 w-[300px] hidden xl:block transition-colors ${darkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-white/5 border-white/10'}`}>
              <div className="flex justify-between items-center mb-6">
                 <div>
-                  <p className={`text-[10px] font-bold uppercase ${darkMode ? 'text-slate-500' : 'text-emerald-100/40'}`}>03 \ 2026</p>
-                  <p className="text-xl font-bold">March</p>
+                  <p className={`text-[10px] font-bold uppercase ${darkMode ? 'text-slate-500' : 'text-emerald-100/40'}`}>{monthNumberLabel} \ {yearLabel}</p>
+                  <p className="text-xl font-bold">{monthNameLabel}</p>
                 </div>
                 <div className="flex gap-2">
-                  <button className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 text-slate-500 hover:text-white' : 'bg-white/5 text-emerald-100/40 hover:text-white'}`}>
+                  <button
+                    type="button"
+                    onClick={goToPreviousMonth}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 text-slate-500 hover:text-white' : 'bg-white/5 text-emerald-100/40 hover:text-white'}`}
+                  >
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                   </button>
-                  <button className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 text-slate-500 hover:text-white' : 'bg-white/5 text-emerald-100/40 hover:text-white'}`}>
+                  <button
+                    type="button"
+                    onClick={goToNextMonth}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 text-slate-500 hover:text-white' : 'bg-white/5 text-emerald-100/40 hover:text-white'}`}
+                  >
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                   </button>
                 </div>
@@ -272,19 +501,80 @@ const User: React.FC = () => {
              <div className={`grid grid-cols-7 gap-y-4 text-center text-[10px] font-bold mb-4 ${darkMode ? 'text-slate-500' : 'text-emerald-100/40'}`}>
                 <span>SU</span><span>MO</span><span>TU</span><span>WE</span><span>TH</span><span>FR</span><span>SA</span>
              </div>
-             <div className="grid grid-cols-7 gap-y-4 text-center text-sm font-medium">
-                <span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>1</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>2</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>3</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>4</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>5</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>6</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>7</span>
-                <span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>8</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>9</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>10</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>11</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>12</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>13</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>14</span>
-                <span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>15</span>
-                <div className="relative flex items-center justify-center">
-                  <span className="w-8 h-8 rounded-lg border border-emerald-400 flex items-center justify-center text-white">16</span>
-                  <div className="absolute -bottom-1 w-1 h-1 bg-emerald-400 rounded-full"></div>
-                </div>
-                <span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>17</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>18</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>19</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>20</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>21</span>
-                <span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>22</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>23</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>24</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>25</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>26</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>27</span><span className={darkMode ? 'text-slate-600' : 'text-emerald-100/60'}>28</span>
+             <div key={`${yearLabel}-${monthNumberLabel}`} className="grid grid-cols-7 gap-y-4 text-center text-sm font-medium">
+                {calendarCells.map((cellDate, cellIndex) => {
+                  if (!cellDate) {
+                    return <span key={`empty-${cellIndex}`} className="h-8"></span>;
+                  }
+
+                  const holiday = getHolidayEntry(cellDate);
+                  const isToday = isSameDay(cellDate, todayDate);
+                  const isSpecialWorkingHoliday = holiday?.type === 'Special Working Day';
+                  const dateKey = getDateKey(cellDate);
+                  const isSelectedDate = selectedDateKey === dateKey;
+                  const dayNumberClass = `w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                    isToday
+                      ? 'bg-orange-500 text-white font-bold shadow-lg shadow-orange-500/30'
+                      : holiday
+                        ? isSpecialWorkingHoliday
+                          ? darkMode
+                            ? 'text-yellow-300 font-bold'
+                            : 'text-yellow-400 font-bold'
+                          : darkMode
+                            ? 'text-red-300 font-bold'
+                            : 'text-red-400 font-bold'
+                        : darkMode
+                          ? 'text-slate-300'
+                          : 'text-emerald-100/80'
+                  }`;
+
+                  return (
+                    <div key={cellDate.toISOString()} className="relative flex items-center justify-center">
+                      <div className="group relative">
+                        {holiday ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedDateKey(dateKey);
+                              setCalendarDate(new Date(cellDate.getFullYear(), cellDate.getMonth(), 1));
+                            }}
+                            className={`${dayNumberClass} cursor-pointer ${isSelectedDate ? 'ring-2 ring-emerald-400/80 ring-offset-1 ring-offset-transparent' : ''}`}
+                          >
+                            {cellDate.getDate()}
+                          </button>
+                        ) : isToday ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedDateKey(dateKey);
+                              setCalendarDate(new Date(cellDate.getFullYear(), cellDate.getMonth(), 1));
+                            }}
+                            className={`${dayNumberClass} cursor-pointer ${isSelectedDate ? 'ring-2 ring-emerald-400/80 ring-offset-1 ring-offset-transparent' : ''}`}
+                          >
+                            {cellDate.getDate()}
+                          </button>
+                        ) : (
+                          <span className={`${dayNumberClass} cursor-default select-none`}>
+                            {cellDate.getDate()}
+                          </span>
+                        )}
+                        {holiday && (
+                          <>
+                            <span className={`pointer-events-none absolute z-20 left-1/2 -translate-x-1/2 -top-12 w-max max-w-[220px] text-center whitespace-normal leading-tight px-2 py-1 rounded-md text-[10px] opacity-0 group-hover:opacity-100 transition-opacity border ${darkMode ? 'bg-white text-lw-green border-emerald-400/40' : 'bg-white text-lw-green border-emerald-500/40'}`}>
+                              {holiday.name}
+                              <br />
+                              {holiday.type}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
              </div>
           </div>
         </section>
+
 
         {/* Bottom Cards Grid */}
         <div className="grid grid-cols-12 gap-8">
@@ -387,6 +677,21 @@ const User: React.FC = () => {
             </div>
           </div>
         </div>
+          </>
+        ) : (
+          <section className={`relative rounded-[40px] p-12 overflow-hidden min-h-[520px] border shadow-xl ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+            <div className="pointer-events-none absolute inset-0 opacity-40">
+              <Aurora amplitude={0.9} blend={0.45} speed={0.8} />
+            </div>
+            <div className="relative z-10 flex h-full flex-col items-center justify-center text-center">
+              <h2 className={`text-4xl font-bold mb-4 ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{activeSection}</h2>
+              <p className={`text-lg font-medium ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>
+                {sectionCopy[activeSection as Exclude<UserSection, 'Dashboard'>]}
+              </p>
+            </div>
+          </section>
+        )}
+        </div>
       </main>
 
       <AnimatePresence>
@@ -406,5 +711,7 @@ const User: React.FC = () => {
 };
 
 export default User;
+
+
 
 

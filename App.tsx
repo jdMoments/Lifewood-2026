@@ -22,7 +22,6 @@ import TermsAndConditions from './components/Term&Condition';
 import SignIn from './components/SignIn';
 import Admin from './components/Admin';
 import User from './components/User';
-import PendingApproval from './components/PendingApproval';
 import CookieSettingsModal from './components/CookieSettingsModal';
 import HelpWidget from './components/HelpWidget';
 import { useAuth } from './context/AuthContext';
@@ -67,7 +66,7 @@ const App: React.FC = () => {
     };
   }, []);
 
-  if (authLoading && route !== '/signin' && !isLocalhost) {
+  if (authLoading && !user && route !== '/signin' && !isLocalhost) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center text-white">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#4ade80]"></div>
@@ -131,8 +130,6 @@ const App: React.FC = () => {
         currentPage = <SignIn />;
       } else if ((user.email || '').trim().toLowerCase() === ADMIN_EMAIL || isAdmin) {
         currentPage = <Admin />;
-      } else if (user && !isApproved) {
-        currentPage = <PendingApproval />;
       } else {
         currentPage = <User />;
       }
@@ -142,8 +139,6 @@ const App: React.FC = () => {
         currentPage = <SignIn />;
       } else if ((user.email || '').trim().toLowerCase() === ADMIN_EMAIL || isAdmin) {
         currentPage = <Admin />;
-      } else if (!isApproved) {
-        currentPage = <PendingApproval />;
       } else {
         currentPage = <User />;
       }
