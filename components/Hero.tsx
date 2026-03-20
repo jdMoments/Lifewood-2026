@@ -1,9 +1,43 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
+
+type HeroSlide = {
+  id: string;
+  type: 'iframe' | 'video';
+  src: string;
+  title: string;
+};
+
+const SLIDE_DURATION_MS = 10000;
+const SWIPE_THRESHOLD = 40;
+
+const HERO_SLIDES: HeroSlide[] = [
+  {
+    id: 'wistia-intro',
+    type: 'iframe',
+    src: 'https://fast.wistia.net/embed/iframe/tckyta4hyq?playbar=true&playButton=false&smallPlayButton=true&qualityControl=true&playbackRateControl=true&volumeControl=false&settingsControl=true&controlsVisibleOnLoad=true&videoFoam=false&fullscreenButton=true&fitStrategy=none&playerColor=046421&autoPlay=true&muted=true&endVideoBehavior=loop',
+    title: 'Lifewood Intro Video',
+  },
+  {
+    id: 'current-background',
+    type: 'video',
+    src: 'https://assets.mixkit.co/videos/preview/mixkit-abstract-technology-binary-code-background-video-4835-large.mp4',
+    title: 'Current Background Video',
+  },
+  {
+    id: 'youtube-feature',
+    type: 'iframe',
+    src: 'https://www.youtube.com/embed/9LjMAJrOirU?autoplay=1&mute=1&loop=1&playlist=9LjMAJrOirU&controls=0&modestbranding=1&rel=0',
+    title: 'Lifewood Feature Video',
+  },
+];
 
 const Hero: React.FC = () => {
   const { t } = useTranslation();
   const [scrollStyle, setScrollStyle] = useState({ opacity: 1, transform: 'scale(1)' });
+  const [activeSlide, setActiveSlide] = useState(0);
+  const touchStartX = useRef<number | null>(null);
+  const pointerStartX = useRef<number | null>(null);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -26,24 +60,103 @@ const Hero: React.FC = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setActiveSlide((prev) => (prev + 1) % HERO_SLIDES.length);
+    }, SLIDE_DURATION_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [activeSlide]);
+
+  const goToNextSlide = () => {
+    setActiveSlide((prev) => (prev + 1) % HERO_SLIDES.length);
+  };
+
+  const goToPreviousSlide = () => {
+    setActiveSlide((prev) => (prev - 1 + HERO_SLIDES.length) % HERO_SLIDES.length);
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    pointerStartX.current = event.clientX;
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerStartX.current === null) return;
+
+    const deltaX = event.clientX - pointerStartX.current;
+    pointerStartX.current = null;
+
+    if (Math.abs(deltaX) < SWIPE_THRESHOLD) return;
+
+    if (deltaX < 0) {
+      goToNextSlide();
+    } else {
+      goToPreviousSlide();
+    }
+  };
+
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    touchStartX.current = event.touches[0]?.clientX ?? null;
+  };
+
+  const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (touchStartX.current === null) return;
+
+    const endX = event.changedTouches[0]?.clientX ?? touchStartX.current;
+    const deltaX = endX - touchStartX.current;
+    touchStartX.current = null;
+
+    if (Math.abs(deltaX) < SWIPE_THRESHOLD) return;
+
+    if (deltaX < 0) {
+      goToNextSlide();
+    } else {
+      goToPreviousSlide();
+    }
+  };
+
   return (
     <section 
       id="home" 
       className="sticky top-0 z-10 h-screen flex flex-col justify-center items-center text-center px-8 sm:px-12 md:px-20 overflow-hidden"
     >
       {/* Video Background */}
-      <div className="absolute inset-0 z-0">
-        <video
-          autoPlay
-          muted
-          loop
-          playsInline
-          className="w-full h-full object-cover"
-        >
-          <source src="https://assets.mixkit.co/videos/preview/mixkit-abstract-technology-binary-code-background-video-4835-large.mp4" type="video/mp4" />
-          {/* User provided link as fallback */}
-          <source src="https://www.pexels.com/download/video/10922866/" type="video/mp4" />
-        </video>
+      <div
+        className="absolute inset-0 z-0"
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
+        {HERO_SLIDES.map((slide, index) => (
+          <div
+            key={slide.id}
+            className={`absolute inset-0 transition-opacity duration-700 ${
+              index === activeSlide ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            {slide.type === 'video' ? (
+              <video
+                autoPlay
+                muted
+                loop
+                playsInline
+                className="w-full h-full object-cover pointer-events-none"
+              >
+                <source src={slide.src} type="video/mp4" />
+                <source src="https://www.pexels.com/download/video/10922866/" type="video/mp4" />
+              </video>
+            ) : (
+              <iframe
+                src={slide.src}
+                title={slide.title}
+                className="w-full h-full pointer-events-none"
+                allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+                referrerPolicy="strict-origin-when-cross-origin"
+              />
+            )}
+          </div>
+        ))}
         <div className="absolute inset-0 bg-black/50" />
       </div>
 
@@ -74,6 +187,20 @@ const Hero: React.FC = () => {
             {t('hero.ctaContact')}
           </a>
         </div>
+      </div>
+
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
+        {HERO_SLIDES.map((slide, index) => (
+          <button
+            key={slide.id}
+            type="button"
+            onClick={() => setActiveSlide(index)}
+            aria-label={`Go to slide ${index + 1}`}
+            className={`h-2.5 w-2.5 rounded-full transition-all duration-300 ${
+              index === activeSlide ? 'bg-lw-green-light scale-110' : 'bg-white/50 hover:bg-white/80'
+            }`}
+          />
+        ))}
       </div>
     </section>
   );

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
 
 interface Message {
   role: 'user' | 'model';
@@ -16,6 +17,7 @@ const getChatScopeFromRoute = (routePath: string) => {
 };
 
 const HelpWidget: React.FC = () => {
+  const { user, profile } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     { role: 'model', text: "Hello! I'm your Lifewood AI assistant. How can I help you today?" }
@@ -53,6 +55,16 @@ const HelpWidget: React.FC = () => {
           message: userMessage,
           scope,
           routePath,
+          userContext: {
+            id: user?.id || '',
+            email: user?.email || '',
+            fullName:
+              profile?.full_name ||
+              user?.user_metadata?.full_name ||
+              user?.user_metadata?.name ||
+              '',
+            role: profile?.role || '',
+          },
         }),
       });
       const data = await response.json().catch(() => ({} as Record<string, any>));
@@ -68,6 +80,28 @@ const HelpWidget: React.FC = () => {
       const errorMessage = error instanceof Error ? error.message : '';
       if (errorMessage.includes('Missing GEMINI_API_KEY')) {
         setMessages(prev => [...prev, { role: 'model', text: "Chatbot server is not configured yet. Add GEMINI_API_KEY to your .env (or .env.local) and restart the app." }]);
+      } else if (
+        errorMessage.includes('reported as leaked') ||
+        errorMessage.includes('Gemini API key was reported as leaked')
+      ) {
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'model',
+            text: "The chatbot API key is blocked right now. Please ask the admin to replace GEMINI_API_KEY and restart the app.",
+          },
+        ]);
+      } else if (
+        errorMessage.includes('not authorized') ||
+        errorMessage.includes('PERMISSION_DENIED')
+      ) {
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'model',
+            text: "The chatbot cannot access the AI service right now. Please verify the API key configuration.",
+          },
+        ]);
       } else {
         setMessages(prev => [...prev, { role: 'model', text: "Sorry, I'm having trouble connecting right now. Please try again later." }]);
       }
