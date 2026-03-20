@@ -22,6 +22,7 @@ import TermsAndConditions from './components/Term&Condition';
 import SignIn from './components/SignIn';
 import Admin from './components/Admin';
 import User from './components/User';
+import Employees from './components/Employees';
 import CookieSettingsModal from './components/CookieSettingsModal';
 import HelpWidget from './components/HelpWidget';
 import { useAuth } from './context/AuthContext';
@@ -29,7 +30,7 @@ import { useAuth } from './context/AuthContext';
 const ADMIN_EMAIL = 'damayojholmer@gmail.com';
 
 const App: React.FC = () => {
-  const { user, isApproved, isAdmin, loading: authLoading } = useAuth();
+  const { user, profile, isApproved, isAdmin, loading: authLoading } = useAuth();
   // Get the current hash, defaulting to '/' for routing purposes
   const getCurrentRoute = () => window.location.hash.substring(1) || '/';
   const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
@@ -73,6 +74,9 @@ const App: React.FC = () => {
       </div>
     );
   }
+
+  const normalizedRole = (profile?.role || '').toString().trim().toLowerCase();
+  const isEmployeeUser = normalizedRole === 'employee';
 
   let currentPage;
   switch (route) {
@@ -130,6 +134,8 @@ const App: React.FC = () => {
         currentPage = <SignIn />;
       } else if ((user.email || '').trim().toLowerCase() === ADMIN_EMAIL || isAdmin) {
         currentPage = <Admin />;
+      } else if (isEmployeeUser) {
+        currentPage = <Employees />;
       } else {
         currentPage = <User />;
       }
@@ -139,6 +145,19 @@ const App: React.FC = () => {
         currentPage = <SignIn />;
       } else if ((user.email || '').trim().toLowerCase() === ADMIN_EMAIL || isAdmin) {
         currentPage = <Admin />;
+      } else if (isEmployeeUser) {
+        currentPage = <Employees />;
+      } else {
+        currentPage = <User />;
+      }
+      break;
+    case '/employees':
+      if (!user) {
+        currentPage = <SignIn />;
+      } else if ((user.email || '').trim().toLowerCase() === ADMIN_EMAIL || isAdmin) {
+        currentPage = <Admin />;
+      } else if (isEmployeeUser) {
+        currentPage = <Employees />;
       } else {
         currentPage = <User />;
       }
@@ -154,12 +173,12 @@ const App: React.FC = () => {
 
   return (
     <div className="font-sans transition-colors duration-300">
-      {route !== '/aiprojects' && route !== '/internal-news' && route !== '/careers' && route !== '/offices' && route !== '/about' && route !== '/tads' && route !== '/horizontal' && route !== '/vertical' && route !== '/typed' && route !== '/phipact' && route !== '/contact' && route !== '/privacy-policy' && route !== '/cookie-policy' && route !== '/terms-and-conditions' && route !== '/signin' && route !== '/admin' && route !== '/user' && <Background />}
-      {route !== '/signin' && route !== '/admin' && route !== '/user' && <Navbar />}
+      {route !== '/aiprojects' && route !== '/internal-news' && route !== '/careers' && route !== '/offices' && route !== '/about' && route !== '/tads' && route !== '/horizontal' && route !== '/vertical' && route !== '/typed' && route !== '/phipact' && route !== '/contact' && route !== '/privacy-policy' && route !== '/cookie-policy' && route !== '/terms-and-conditions' && route !== '/signin' && route !== '/admin' && route !== '/user' && route !== '/employees' && <Background />}
+      {route !== '/signin' && route !== '/admin' && route !== '/user' && route !== '/employees' && <Navbar />}
       <main>
         {currentPage}
       </main>
-      {route !== '/signin' && route !== '/admin' && route !== '/user' && <Footer onCookieSettingsClick={() => setShowCookieSettings(true)} />}
+      {route !== '/signin' && route !== '/admin' && route !== '/user' && route !== '/employees' && <Footer onCookieSettingsClick={() => setShowCookieSettings(true)} />}
       <HelpWidget />
       <CookieSettingsModal isOpen={showCookieSettings} onClose={() => setShowCookieSettings(false)} />
     </div>

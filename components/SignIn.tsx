@@ -137,10 +137,14 @@ const SignIn: React.FC = () => {
         return;
       }
 
-      const isAdminUser = normalizedEmail === ADMIN_EMAIL || (profile?.role || '').toLowerCase() === 'admin';
+      const normalizedRole = (profile?.role || '').toString().trim().toLowerCase();
+      const isAdminUser = normalizedEmail === ADMIN_EMAIL || normalizedRole === 'admin';
+      const isEmployeeUser = normalizedRole === 'employee';
 
       if (isAdminUser) {
         window.location.hash = '#/admin';
+      } else if (isEmployeeUser) {
+        window.location.hash = '#/employees';
       } else {
         window.location.hash = '#/user';
       }

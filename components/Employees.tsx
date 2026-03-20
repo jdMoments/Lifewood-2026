@@ -8,14 +8,14 @@ import Aurora from './Aurora';
 type UserSection = 'Dashboard' | 'My Progress' | 'Tasks' | 'Performance' | 'Settings';
 
 const SAMPLE_TASKS: Array<{ id: string; title: string; completed: boolean }> = [
-  { id: 'task-1', title: 'Complete AI onboarding module', completed: false },
-  { id: 'task-2', title: 'Watch prompt engineering lesson', completed: false },
-  { id: 'task-3', title: 'Submit dashboard design draft', completed: false },
-  { id: 'task-4', title: 'Review model evaluation checklist', completed: false },
-  { id: 'task-5', title: 'Join weekly mentorship session', completed: false },
+  { id: 'task-1', title: 'Prepare daily operations report', completed: false },
+  { id: 'task-2', title: 'Attend 10:00 AM team stand-up meeting', completed: false },
+  { id: 'task-3', title: 'Review and reply to pending client emails', completed: false },
+  { id: 'task-4', title: 'Update project tracker and task statuses', completed: false },
+  { id: 'task-5', title: 'Submit end-of-day accomplishment summary', completed: false },
 ];
 
-const User: React.FC = () => {
+const Employees: React.FC = () => {
   const { user, loading: authLoading, signOut: authSignOut } = useAuth();
   const [profile, setProfile] = useState<any>(null);
   const [goals, setGoals] = useState<any[]>([]);
@@ -721,7 +721,8 @@ const User: React.FC = () => {
   );
 };
 
-export default User;
+export default Employees;
+
 
 
 

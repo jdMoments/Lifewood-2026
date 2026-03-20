@@ -6,6 +6,15 @@ interface Message {
   text: string;
 }
 
+const getCurrentRoutePath = () => window.location.hash.substring(1) || '/';
+
+const getChatScopeFromRoute = (routePath: string) => {
+  if (routePath === '/admin') return 'admin';
+  if (routePath === '/employees') return 'employees';
+  if (routePath === '/user') return 'user';
+  return 'public';
+};
+
 const HelpWidget: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -33,12 +42,18 @@ const HelpWidget: React.FC = () => {
     setIsLoading(true);
 
     try {
+      const routePath = getCurrentRoutePath();
+      const scope = getChatScopeFromRoute(routePath);
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: userMessage }),
+        body: JSON.stringify({
+          message: userMessage,
+          scope,
+          routePath,
+        }),
       });
       const data = await response.json().catch(() => ({} as Record<string, any>));
 
