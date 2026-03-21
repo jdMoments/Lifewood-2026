@@ -507,18 +507,97 @@ const User: React.FC = () => {
             </div>
           </div>
 
-          <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8 lg:gap-12 mt-8 lg:mt-12">
+          <div className="relative z-10 grid grid-cols-3 gap-3 sm:gap-5 lg:gap-7 mt-8 lg:mt-10 max-w-[820px]">
             <div>
-              <p className="text-4xl font-bold mb-1">{profile?.completion || '0'}%</p>
+              <p className="text-2xl sm:text-4xl font-bold mb-1">{profile?.completion || '0'}%</p>
               <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-emerald-100/40'}`}>Progress</p>
             </div>
             <div>
-              <p className="text-4xl font-bold mb-1">{profile?.hours_spent || '0'}h</p>
+              <p className="text-2xl sm:text-4xl font-bold mb-1">{profile?.hours_spent || '0'}h</p>
               <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-emerald-100/40'}`}>Time Invested</p>
             </div>
             <div>
-              <p className="text-4xl font-bold mb-1">{profile?.grade || 'N/A'}</p>
+              <p className="text-2xl sm:text-4xl font-bold mb-1">{profile?.grade || 'N/A'}</p>
               <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-emerald-100/40'}`}>Performance</p>
+            </div>
+          </div>
+
+          <div className={`relative z-10 mt-6 lg:hidden backdrop-blur-md border rounded-[22px] p-4 transition-colors ${darkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-white/10 border-white/10'}`}>
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <p className={`text-[9px] font-bold uppercase ${darkMode ? 'text-slate-500' : 'text-emerald-100/40'}`}>{monthNumberLabel} \ {yearLabel}</p>
+                <p className="text-base font-bold">{monthNameLabel}</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={goToPreviousMonth}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-white/5 text-emerald-100/50 hover:text-white'}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={goToNextMonth}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-white/5 text-emerald-100/50 hover:text-white'}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div className={`grid grid-cols-7 text-center text-[9px] font-bold mb-2 ${darkMode ? 'text-slate-500' : 'text-emerald-100/40'}`}>
+              <span>SU</span><span>MO</span><span>TU</span><span>WE</span><span>TH</span><span>FR</span><span>SA</span>
+            </div>
+            <div key={`mobile-${yearLabel}-${monthNumberLabel}`} className="grid grid-cols-7 gap-y-2 text-center text-xs font-medium">
+              {calendarCells.map((cellDate, cellIndex) => {
+                if (!cellDate) {
+                  return <span key={`mobile-empty-${cellIndex}`} className="h-6"></span>;
+                }
+
+                const holiday = getHolidayEntry(cellDate);
+                const isToday = isSameDay(cellDate, todayDate);
+                const isSpecialWorkingHoliday = holiday?.type === 'Special Working Day';
+                const dateKey = getDateKey(cellDate);
+                const isSelectedDate = selectedDateKey === dateKey;
+                const dayNumberClass = `w-6 h-6 rounded-md flex items-center justify-center transition-colors ${
+                  isToday
+                    ? 'bg-orange-500 text-white font-bold shadow-lg shadow-orange-500/30'
+                    : holiday
+                      ? isSpecialWorkingHoliday
+                        ? darkMode
+                          ? 'text-yellow-300 font-bold'
+                          : 'text-yellow-400 font-bold'
+                        : darkMode
+                          ? 'text-red-300 font-bold'
+                          : 'text-red-400 font-bold'
+                      : darkMode
+                        ? 'text-slate-300'
+                        : 'text-emerald-100/80'
+                }`;
+
+                if (holiday || isToday) {
+                  return (
+                    <button
+                      key={`mobile-${cellDate.toISOString()}`}
+                      type="button"
+                      onClick={() => {
+                        setSelectedDateKey(dateKey);
+                        setCalendarDate(new Date(cellDate.getFullYear(), cellDate.getMonth(), 1));
+                      }}
+                      className={`${dayNumberClass} mx-auto ${isSelectedDate ? 'ring-2 ring-emerald-400/80 ring-offset-1 ring-offset-transparent' : ''}`}
+                    >
+                      {cellDate.getDate()}
+                    </button>
+                  );
+                }
+
+                return (
+                  <span key={`mobile-${cellDate.toISOString()}`} className={`${dayNumberClass} mx-auto cursor-default select-none`}>
+                    {cellDate.getDate()}
+                  </span>
+                );
+              })}
             </div>
           </div>
 
