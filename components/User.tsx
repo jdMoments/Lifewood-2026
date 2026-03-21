@@ -36,6 +36,7 @@ const User: React.FC = () => {
     return false;
   });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [taskSearchTerm, setTaskSearchTerm] = useState('');
 
   useEffect(() => {
@@ -229,8 +230,14 @@ const User: React.FC = () => {
 
   return (
     <div className={`min-h-screen flex font-sans transition-colors ${darkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-[#1a1a1a]'}`}>
+      {isMobileSidebarOpen && (
+        <div
+          className="fixed inset-0 z-10 bg-black/45 lg:hidden"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
       {/* Sidebar */}
-      <aside className={`${isSidebarCollapsed ? 'w-24' : 'w-64'} border-r flex flex-col p-6 fixed h-full z-20 transition-all duration-300 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-emerald-100'}`}>
+      <aside className={`${isSidebarCollapsed ? 'w-72 lg:w-24' : 'w-72 lg:w-64'} border-r flex flex-col p-6 pb-24 lg:pb-6 fixed h-[100dvh] overflow-y-auto z-20 transition-all duration-300 transform ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-emerald-100'}`}>
         <div className={`mb-12 ${isSidebarCollapsed ? 'space-y-3' : ''}`}>
           <div className={`flex items-center ${isSidebarCollapsed ? 'flex-col gap-3' : 'justify-between gap-3'}`}>
             <div
@@ -249,10 +256,16 @@ const User: React.FC = () => {
             </div>
 
             <button
-              onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                  setIsMobileSidebarOpen(false);
+                  return;
+                }
+                setIsSidebarCollapsed((prev) => !prev);
+              }}
               className={`rounded-lg p-1 transition-colors ${darkMode ? 'hover:bg-slate-800' : 'hover:bg-emerald-50'}`}
-              title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={typeof window !== 'undefined' && window.innerWidth < 1024 ? 'Close sidebar' : isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={typeof window !== 'undefined' && window.innerWidth < 1024 ? 'Close sidebar' : isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
               <span className="flex flex-col justify-center gap-0.5 w-5 h-5">
                 <span className={`h-0.5 rounded-sm transition-all ${darkMode ? 'bg-slate-200' : 'bg-black'}`}></span>
@@ -274,6 +287,11 @@ const User: React.FC = () => {
                     type="button"
                     title={item.label}
                     onClick={() => setActiveSection(item.label)}
+                    onMouseUp={() => {
+                      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                        setIsMobileSidebarOpen(false);
+                      }
+                    }}
                     className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'text-left'} px-4 py-3 rounded-xl transition-all ${
                       activeSection === item.label
                         ? darkMode
@@ -306,6 +324,11 @@ const User: React.FC = () => {
                     type="button"
                     title={item.label}
                     onClick={() => setActiveSection(item.label)}
+                    onMouseUp={() => {
+                      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                        setIsMobileSidebarOpen(false);
+                      }
+                    }}
                     className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'text-left'} px-4 py-3 rounded-xl transition-all ${
                       activeSection === item.label
                         ? darkMode
@@ -366,7 +389,7 @@ const User: React.FC = () => {
       </aside>
 
       {/* Main Content */}
-      <main className={`relative flex-grow ${isSidebarCollapsed ? 'ml-24' : 'ml-64'} p-8 overflow-hidden transition-all duration-300`}>
+      <main className={`relative flex-grow ml-0 ${isSidebarCollapsed ? 'lg:ml-24' : 'lg:ml-64'} p-4 sm:p-6 lg:p-8 pb-24 lg:pb-8 overflow-hidden transition-all duration-300`}>
         <div className="pointer-events-none absolute inset-0 opacity-35">
           <Aurora
             amplitude={0.9}
@@ -376,12 +399,24 @@ const User: React.FC = () => {
         </div>
 
         <div className="relative z-10">
-        <div className="flex justify-end mb-2 -mt-6 -mr-6">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between mb-4 mt-0">
+          <button
+            type="button"
+            onClick={() => setIsMobileSidebarOpen(true)}
+            className={`lg:hidden w-9 h-9 rounded-lg border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-emerald-200 text-emerald-700 hover:bg-emerald-50'}`}
+            aria-label="Open sidebar"
+          >
+            <span className="flex flex-col justify-center gap-0.5 w-4 h-4">
+              <span className="h-0.5 rounded-sm bg-current"></span>
+              <span className="h-0.5 rounded-sm bg-current"></span>
+              <span className="h-0.5 rounded-sm bg-current"></span>
+            </span>
+          </button>
+          <div className="flex items-center gap-2 sm:gap-3 ml-auto">
             <button
               type="button"
               aria-label="Notifications"
-              className={`w-6 h-6 rounded-full border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-200'}`}
+              className={`w-8 h-8 sm:w-6 sm:h-6 rounded-full border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-200'}`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M10.268 21a2 2 0 0 0 3.464 0"/>
@@ -392,7 +427,7 @@ const User: React.FC = () => {
               type="button"
               onClick={() => setDarkMode(!darkMode)}
               aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-              className={`w-6 h-6 rounded-full border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-emerald-400 hover:bg-slate-700' : 'bg-gray-100 border-gray-200 text-emerald-600 hover:bg-gray-200'}`}
+              className={`w-8 h-8 sm:w-6 sm:h-6 rounded-full border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-emerald-400 hover:bg-slate-700' : 'bg-gray-100 border-gray-200 text-emerald-600 hover:bg-gray-200'}`}
             >
               {darkMode ? (
                 <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -415,7 +450,7 @@ const User: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsProfileOpen(true)}
-              className={`w-6 h-6 rounded-full border p-0.5 overflow-hidden transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-gray-100 border-gray-200 hover:bg-gray-200'}`}
+              className={`w-8 h-8 sm:w-6 sm:h-6 rounded-full border p-0.5 overflow-hidden transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-gray-100 border-gray-200 hover:bg-gray-200'}`}
             >
               {profile?.avatar_url ? (
                 <img
@@ -436,7 +471,7 @@ const User: React.FC = () => {
           <>
         {/* Hero Section */}
         <section
-          className={`relative rounded-[40px] p-12 text-white overflow-hidden mb-8 min-h-[450px] flex flex-col justify-between shadow-xl transition-all ${shouldShowHolidayFrameBackground ? 'bg-[#1a2e1a] shadow-emerald-900/20' : darkMode ? 'bg-slate-800 shadow-emerald-900/10' : 'bg-[#1a2e1a] shadow-emerald-900/20'}`}
+          className={`relative rounded-[32px] lg:rounded-[40px] p-6 sm:p-8 lg:p-12 text-white overflow-hidden mb-6 lg:mb-8 min-h-[420px] lg:min-h-[450px] flex flex-col justify-between shadow-xl transition-all ${shouldShowHolidayFrameBackground ? 'bg-[#1a2e1a] shadow-emerald-900/20' : darkMode ? 'bg-slate-800 shadow-emerald-900/10' : 'bg-[#1a2e1a] shadow-emerald-900/20'}`}
           style={
             shouldShowHolidayFrameBackground
               ? {
@@ -459,12 +494,12 @@ const User: React.FC = () => {
               <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">Learning Path</span>
             </div>
 
-            <h1 className="text-5xl md:text-6xl font-bold max-w-2xl leading-[1.1] mb-12">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold max-w-2xl leading-[1.1] mb-8 lg:mb-12">
               {profile?.current_course || 'Your AI Learning Journey Starts Here.'}
             </h1>
 
-            <div className="flex items-center gap-8">
-              <button className="bg-emerald-500 text-white font-bold px-8 py-4 rounded-full flex items-center gap-3 hover:scale-105 transition-transform shadow-lg shadow-emerald-500/20">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-8">
+              <button className="bg-emerald-500 text-white font-bold px-6 sm:px-8 py-3 sm:py-4 rounded-full flex items-center justify-center gap-3 hover:scale-105 transition-transform shadow-lg shadow-emerald-500/20">
                 Continue Learning
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
               </button>
@@ -472,7 +507,7 @@ const User: React.FC = () => {
             </div>
           </div>
 
-          <div className="relative z-10 flex gap-12 mt-12">
+          <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8 lg:gap-12 mt-8 lg:mt-12">
             <div>
               <p className="text-4xl font-bold mb-1">{profile?.completion || '0'}%</p>
               <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-emerald-100/40'}`}>Progress</p>
@@ -488,7 +523,7 @@ const User: React.FC = () => {
           </div>
 
           {/* Calendar Widget Overlay */}
-          <div className={`absolute top-12 right-12 z-20 pointer-events-auto backdrop-blur-md border rounded-[32px] p-6 w-[300px] hidden xl:block transition-colors ${darkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-white/5 border-white/10'}`}>
+          <div className={`absolute top-8 right-8 z-20 pointer-events-auto backdrop-blur-md border rounded-[32px] p-6 w-[300px] hidden lg:block transition-colors ${darkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-white/5 border-white/10'}`}>
              <div className="flex justify-between items-center mb-6">
                 <div>
                   <p className={`text-[10px] font-bold uppercase ${darkMode ? 'text-slate-500' : 'text-emerald-100/40'}`}>{monthNumberLabel} \ {yearLabel}</p>
@@ -591,7 +626,7 @@ const User: React.FC = () => {
 
 
         {/* Bottom Cards Grid */}
-        <div className="grid grid-cols-12 gap-8">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 lg:gap-8">
           {/* Activity Card */}
           <div className={`col-span-12 lg:col-span-5 rounded-[40px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
             <div className="flex justify-between items-center mb-8">
@@ -648,7 +683,7 @@ const User: React.FC = () => {
             </div>
           </div>
           {/* Right Column Stats */}
-          <div className="col-span-12 lg:col-span-7 grid grid-cols-2 gap-8">
+          <div className="col-span-12 xl:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-6 lg:gap-8">
             {/* Efficiency Card */}
             <div className={`col-span-1 rounded-[40px] p-8 flex flex-col justify-between shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-emerald-100'}`}>
               <div className="flex justify-between items-start">
@@ -675,7 +710,7 @@ const User: React.FC = () => {
             </div>
 
             {/* Weekly Goals Card */}
-            <div className={`col-span-2 rounded-[40px] p-8 shadow-sm border flex items-center justify-between transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+            <div className={`sm:col-span-2 rounded-[40px] p-8 shadow-sm border flex items-center justify-between transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
               <div className="flex items-center gap-6">
                 <div className={`w-14 h-14 rounded-full flex items-center justify-center ${darkMode ? 'bg-slate-900 text-slate-500' : 'bg-gray-50 text-gray-400'}`}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
@@ -690,7 +725,7 @@ const User: React.FC = () => {
         </div>
           </>
         ) : (
-          <section className={`relative rounded-[40px] p-12 overflow-hidden min-h-[520px] border shadow-xl ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+          <section className={`relative rounded-[32px] lg:rounded-[40px] p-6 sm:p-8 lg:p-12 overflow-hidden min-h-[420px] lg:min-h-[520px] border shadow-xl ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
             <div className="pointer-events-none absolute inset-0 opacity-40">
               <Aurora amplitude={0.9} blend={0.45} speed={0.8} />
             </div>

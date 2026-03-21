@@ -10,7 +10,7 @@
 
 @layer base {
   body {
-    @apply transition-colors duration-300;
+    @apply transition-colors duration-300 overflow-x-hidden;
   }
   
   .dark body {

@@ -34,6 +34,13 @@ const getFirstName = (profile: any) => {
   return 'User';
 };
 
+const getProfilePhotoUrl = (profile: any) =>
+  (profile?.avatar_url ||
+    profile?.profile_picture_url ||
+    profile?.photo_url ||
+    profile?.profile_image_url ||
+    '').toString().trim();
+
 const isInternLikeRole = (role: string) => role === 'intern' || role === 'user';
 
 const isEmployeeLikeRole = (role: string) => role === 'employee' || role === 'admin';
@@ -50,6 +57,36 @@ const isPendingProfile = (profile: any) => {
   const isDeclined = profile?.is_declined === true;
 
   return !isApproved && !isDeclined && role !== 'admin' && !ADMIN_EMAILS.includes(email);
+};
+
+type AdminTaskRole = 'intern' | 'employee';
+
+type AdminTaskAttachment = {
+  name: string;
+  size: number;
+  type: string;
+};
+
+type AdminTaskCriteria = {
+  lifewoodBranding: string;
+  colorPalettes: string;
+  design: string;
+  content: string;
+};
+
+type AdminTaskItem = {
+  id: string;
+  title: string;
+  entryType: 'Task' | 'Projects';
+  targetRole: AdminTaskRole;
+  assignedProfileId?: string | null;
+  assignedProfileName?: string | null;
+  description: string;
+  criteria: AdminTaskCriteria;
+  attachment: AdminTaskAttachment | null;
+  startedAt: string;
+  deadline: string;
+  createdAt: string;
 };
 
 const Admin: React.FC = () => {
@@ -82,6 +119,7 @@ const Admin: React.FC = () => {
   const [applicantRowActionId, setApplicantRowActionId] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [actioningUserId, setActioningUserId] = useState<string | null>(null);
   const [evaluationRoleFilter, setEvaluationRoleFilter] = useState<'intern' | 'employee'>('intern');
   const [selectedEvaluationUserId, setSelectedEvaluationUserId] = useState('');
@@ -93,6 +131,25 @@ const Admin: React.FC = () => {
   const [reportSearchTerm, setReportSearchTerm] = useState('');
   const [reportSortBy, setReportSortBy] = useState<'consistency' | 'completion' | 'efficiency'>('consistency');
   const [reportNotice, setReportNotice] = useState('');
+  const [taskRoleFilter, setTaskRoleFilter] = useState<AdminTaskRole>('intern');
+  const [adminTasks, setAdminTasks] = useState<AdminTaskItem[]>([]);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [taskEntryType, setTaskEntryType] = useState<'Task' | 'Projects'>('Task');
+  const [taskDescription, setTaskDescription] = useState('');
+  const [taskCriteria, setTaskCriteria] = useState<AdminTaskCriteria>({
+    lifewoodBranding: '',
+    colorPalettes: '',
+    design: '',
+    content: '',
+  });
+  const [taskAttachment, setTaskAttachment] = useState<AdminTaskAttachment | null>(null);
+  const [taskDeadline, setTaskDeadline] = useState('');
+  const [taskCalendarView, setTaskCalendarView] = useState(new Date());
+  const [taskFormNotice, setTaskFormNotice] = useState('');
+  const [taskAssignee, setTaskAssignee] = useState<{ id: string; name: string } | null>(null);
+  const [taskModalSource, setTaskModalSource] = useState<'new-assignment' | 'intern-card'>('new-assignment');
+  const [taskPendingDelete, setTaskPendingDelete] = useState<AdminTaskItem | null>(null);
   const roleDropdownRef = useRef<HTMLDivElement | null>(null);
   const applicantActionMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -546,6 +603,176 @@ const Admin: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem('lifewood_admin_tasks_v1');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setAdminTasks(parsed);
+      }
+    } catch (error) {
+      console.error('Unable to load admin tasks from local storage:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem('lifewood_admin_tasks_v1', JSON.stringify(adminTasks));
+    } catch (error) {
+      console.error('Unable to save admin tasks to local storage:', error);
+    }
+  }, [adminTasks]);
+
+  const clearTaskForm = () => {
+    setEditingTaskId(null);
+    setTaskEntryType('Task');
+    setTaskModalSource('new-assignment');
+    setTaskAssignee(null);
+    setTaskDescription('');
+    setTaskCriteria({
+      lifewoodBranding: '',
+      colorPalettes: '',
+      design: '',
+      content: '',
+    });
+    setTaskAttachment(null);
+    setTaskDeadline('');
+    setTaskFormNotice('');
+    setTaskCalendarView(new Date());
+  };
+
+  const openCreateTaskModal = (options?: { assignee?: any; source?: 'new-assignment' | 'intern-card' }) => {
+    clearTaskForm();
+    const assignee = options?.assignee;
+    const source = options?.source ?? (assignee?.id ? 'intern-card' : 'new-assignment');
+    setTaskModalSource(source);
+    if (assignee?.id) {
+      setTaskRoleFilter('intern');
+      setTaskAssignee({
+        id: assignee.id,
+        name: assignee.full_name || getFirstName(assignee),
+      });
+    }
+    setIsTaskModalOpen(true);
+  };
+
+  const openEditTaskModal = (task: AdminTaskItem) => {
+    setEditingTaskId(task.id);
+    setTaskEntryType(task.entryType || 'Task');
+    setTaskRoleFilter(task.targetRole);
+    setTaskModalSource(task.assignedProfileId ? 'intern-card' : 'new-assignment');
+    setTaskAssignee(
+      task.assignedProfileId
+        ? {
+            id: task.assignedProfileId,
+            name: task.assignedProfileName || 'Assigned Intern',
+          }
+        : null
+    );
+    setTaskDescription(task.description);
+    setTaskCriteria(task.criteria);
+    setTaskAttachment(task.attachment);
+    setTaskDeadline(task.deadline);
+    setTaskCalendarView(task.deadline ? new Date(task.deadline) : new Date());
+    setTaskFormNotice('');
+    setIsTaskModalOpen(true);
+  };
+
+  const closeTaskModal = () => {
+    setIsTaskModalOpen(false);
+    clearTaskForm();
+  };
+
+  const handleTaskAttachmentChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setTaskAttachment({
+      name: file.name,
+      size: file.size,
+      type: file.type || 'Unknown',
+    });
+    event.target.value = '';
+  };
+
+  const handleConfirmTask = () => {
+    const missingFields: string[] = [];
+
+    if (!taskEntryType.trim()) missingFields.push('Type');
+    if (!taskDescription.trim()) missingFields.push('Description');
+    if (!taskDeadline) missingFields.push('Deadline');
+
+    if (missingFields.length > 0) {
+      setTaskFormNotice(`Please complete all required fields: ${missingFields.join(', ')}.`);
+      return;
+    }
+
+    const timestamp = new Date().toISOString();
+
+    if (editingTaskId) {
+      setAdminTasks((prev) =>
+        prev.map((task) =>
+          task.id === editingTaskId
+            ? {
+                ...task,
+                entryType: taskEntryType,
+                targetRole: taskRoleFilter,
+                assignedProfileId: taskAssignee?.id ?? null,
+                assignedProfileName: taskAssignee?.name ?? null,
+                description: taskDescription.trim(),
+                criteria: taskCriteria,
+                attachment: taskAttachment,
+                deadline: taskDeadline,
+              }
+            : task
+        )
+      );
+    } else {
+      const nextTaskNumber =
+        adminTasks.filter((task) => task.targetRole === taskRoleFilter && task.entryType === taskEntryType).length + 1;
+      const newTask: AdminTaskItem = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        title: `${taskEntryType} ${nextTaskNumber}`,
+        entryType: taskEntryType,
+        targetRole: taskRoleFilter,
+        assignedProfileId: taskAssignee?.id ?? null,
+        assignedProfileName: taskAssignee?.name ?? null,
+        description: taskDescription.trim(),
+        criteria: taskCriteria,
+        attachment: taskAttachment,
+        startedAt: timestamp,
+        deadline: taskDeadline,
+        createdAt: timestamp,
+      };
+      setAdminTasks((prev) => [newTask, ...prev]);
+    }
+
+    closeTaskModal();
+  };
+
+  const handleDeleteTask = (taskId: string) => {
+    setAdminTasks((prev) => prev.filter((task) => task.id !== taskId));
+  };
+
+  const requestDeleteTask = (task: AdminTaskItem) => {
+    setTaskPendingDelete(task);
+  };
+
+  const closeDeleteTaskModal = () => {
+    setTaskPendingDelete(null);
+  };
+
+  const confirmDeleteTask = () => {
+    if (!taskPendingDelete) return;
+    handleDeleteTask(taskPendingDelete.id);
+    if (editingTaskId === taskPendingDelete.id) {
+      closeTaskModal();
+    }
+    setTaskPendingDelete(null);
+  };
+
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
@@ -952,6 +1179,106 @@ const Admin: React.FC = () => {
     { label: 'Employee', value: 'Employee' },
     { label: 'Intern', value: 'Intern' },
   ];
+  const totalApplicantsCount = applications.length;
+  const totalInternsCount = approvedInternProfiles.length;
+  const totalEmployeesCount = approvedEmployeeProfiles.length;
+  const totalApprovedMembers = totalInternsCount + totalEmployeesCount;
+  const totalApprovalQueue = pendingProfiles.length + totalApprovedMembers;
+  const approvalRate = totalApprovalQueue > 0 ? Math.round((totalApprovedMembers / totalApprovalQueue) * 100) : 0;
+  const analyticsWeekOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const analyticsWeekSeed = analyticsWeekOrder.reduce((acc, day) => {
+    acc[day] = { day, applicants: 0, interns: 0, employees: 0, total: 0 };
+    return acc;
+  }, {} as Record<string, { day: string; applicants: number; interns: number; employees: number; total: number }>);
+
+  applications.forEach((item) => {
+    const dateValue = item?.created_at ? new Date(item.created_at) : null;
+    if (!dateValue || Number.isNaN(dateValue.getTime())) return;
+    const day = analyticsWeekOrder[(dateValue.getDay() + 6) % 7];
+    analyticsWeekSeed[day].applicants += 1;
+  });
+
+  approvedInternProfiles.forEach((item) => {
+    const dateValue = item?.created_at ? new Date(item.created_at) : null;
+    if (!dateValue || Number.isNaN(dateValue.getTime())) return;
+    const day = analyticsWeekOrder[(dateValue.getDay() + 6) % 7];
+    analyticsWeekSeed[day].interns += 1;
+  });
+
+  approvedEmployeeProfiles.forEach((item) => {
+    const dateValue = item?.created_at ? new Date(item.created_at) : null;
+    if (!dateValue || Number.isNaN(dateValue.getTime())) return;
+    const day = analyticsWeekOrder[(dateValue.getDay() + 6) % 7];
+    analyticsWeekSeed[day].employees += 1;
+  });
+
+  let analyticsWeekData = analyticsWeekOrder.map((day) => {
+    const dayEntry = analyticsWeekSeed[day];
+    return {
+      ...dayEntry,
+      total: dayEntry.applicants + dayEntry.interns + dayEntry.employees,
+    };
+  });
+
+  const hasAnalyticsData = analyticsWeekData.some((entry) => entry.total > 0);
+  if (!hasAnalyticsData) {
+    const applicantPattern = [0.32, 0.46, 0.72, 0.84, 0.58, 0.41, 0.49];
+    const internPattern = [0.27, 0.37, 0.56, 0.62, 0.44, 0.33, 0.39];
+    const employeePattern = [0.22, 0.3, 0.47, 0.53, 0.38, 0.28, 0.34];
+
+    analyticsWeekData = analyticsWeekOrder.map((day, index) => {
+      const applicantsValue = Math.max(1, Math.round(Math.max(totalApplicantsCount, 6) * applicantPattern[index]));
+      const internsValue = Math.max(1, Math.round(Math.max(totalInternsCount, 4) * internPattern[index]));
+      const employeesValue = Math.max(1, Math.round(Math.max(totalEmployeesCount, 3) * employeePattern[index]));
+
+      return {
+        day,
+        applicants: applicantsValue,
+        interns: internsValue,
+        employees: employeesValue,
+        total: applicantsValue + internsValue + employeesValue,
+      };
+    });
+  }
+
+  const peakAnalyticsDay = analyticsWeekData.reduce((peak, current) =>
+    current.total > peak.total ? current : peak
+  , analyticsWeekData[0]);
+  const analyticsAveragePerDay = Math.round(
+    analyticsWeekData.reduce((sum, entry) => sum + entry.total, 0) / analyticsWeekData.length
+  );
+  const analyticsLegendItems = [
+    { label: 'Applicants', value: totalApplicantsCount, color: '#3b82f6' },
+    { label: 'Interns', value: totalInternsCount, color: '#22c55e' },
+    { label: 'Employee', value: totalEmployeesCount, color: '#f59e0b' },
+  ];
+  const filteredAdminTasks = adminTasks
+    .filter((task) => task.targetRole === taskRoleFilter)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const createdAssignmentTasks = filteredAdminTasks.filter((task) => !task.assignedProfileId);
+  const toNumericScore = (value: string) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const criteriaTotalScore =
+    toNumericScore(taskCriteria.lifewoodBranding) +
+    toNumericScore(taskCriteria.colorPalettes) +
+    toNumericScore(taskCriteria.design) +
+    toNumericScore(taskCriteria.content);
+  const criteriaPassingScore = Math.round(criteriaTotalScore * 0.75 * 100) / 100;
+  const taskCalendarMonthStart = new Date(taskCalendarView.getFullYear(), taskCalendarView.getMonth(), 1);
+  const taskCalendarMonthLabel = taskCalendarMonthStart.toLocaleString('default', { month: 'long', year: 'numeric' });
+  const taskCalendarStartOffset = taskCalendarMonthStart.getDay();
+  const taskCalendarDaysInMonth = new Date(taskCalendarView.getFullYear(), taskCalendarView.getMonth() + 1, 0).getDate();
+  const taskCalendarDays = Array.from({ length: taskCalendarStartOffset + taskCalendarDaysInMonth }, (_, index) =>
+    index < taskCalendarStartOffset ? null : index - taskCalendarStartOffset + 1
+  );
+  const formatTaskDate = (dateValue: string) => {
+    if (!dateValue) return 'N/A';
+    const parsed = new Date(dateValue);
+    if (Number.isNaN(parsed.getTime())) return 'N/A';
+    return parsed.toLocaleDateString();
+  };
 
   const handleSaveEvaluation = async () => {
     if (!selectedEvaluationUser) {
@@ -1063,23 +1390,55 @@ const Admin: React.FC = () => {
   };
 
   const menuItems = [
-    { icon: '📊', label: 'Dashboard' },
-    { icon: '🕒', label: 'Analytics' },
-    { icon: '📝', label: 'Evaluation' },
-    { icon: '📈', label: 'Reports' },
-    { icon: '📩', label: 'Applicants' },
-    { icon: '👥', label: 'Manage Users' },
+    { icon: '\u{1F4CA}', label: 'Dashboard' },
+    { icon: '\u{1F552}', label: 'Analytics' },
+    { icon: 'task-custom', label: 'Task' },
+    { icon: '\u{1F4DD}', label: 'Evaluation' },
+    { icon: '\u{1F4C8}', label: 'Reports' },
+    { icon: '\u{1F4E9}', label: 'Applicants' },
+    { icon: '\u{1F465}', label: 'Manage Users' },
   ];
 
   const settingsItems = [
-    { icon: '⚙️', label: 'Settings' },
+    { icon: '\u2699\uFE0F', label: 'Settings' },
   ];
+
+  const renderMenuIcon = (item: { icon: string; label: string }) => {
+    if (item.label === 'Task') {
+      return (
+        <span className="inline-flex items-center justify-center w-6 h-6">
+          <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="2.5" y="1.8" width="19" height="20.4" rx="2.8" />
+            <text x="12" y="6.9" textAnchor="middle" fontSize="4.2" fontWeight="700" fill="currentColor" stroke="none">TASK</text>
+            <circle cx="6.4" cy="10.2" r="1.35" />
+            <path d="M5.75 10.2l0.45 0.45 0.95-1" />
+            <path d="M9.2 10.2h8.3" />
+            <circle cx="6.4" cy="14.1" r="1.35" />
+            <path d="M5.75 14.1l0.45 0.45 0.95-1" />
+            <path d="M9.2 14.1h8.3" />
+            <circle cx="6.4" cy="18" r="1.35" />
+            <path d="M5.85 17.45l1.1 1.1" />
+            <path d="M6.95 17.45l-1.1 1.1" />
+            <path d="M9.2 18h8.3" />
+          </svg>
+        </span>
+      );
+    }
+
+    return <span className="text-lg">{item.icon}</span>;
+  };
 
   return (
     <div className={`min-h-screen flex font-sans transition-colors duration-300 ${darkMode ? 'bg-[#0f172a] text-slate-200' : 'bg-white text-[#1a1a1a]'}`}>
+      {isMobileSidebarOpen && (
+        <div
+          className="fixed inset-0 z-10 bg-black/45 lg:hidden"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
       {/* Sidebar */}
       <aside
-        className={`${isSidebarCollapsed ? 'w-24' : 'w-64'} border-r flex flex-col p-6 fixed h-full z-20 transition-all duration-300 overflow-y-auto backdrop-blur-xl ${darkMode ? 'bg-white/10 border-white/20 shadow-[0_0_30px_rgba(15,23,42,0.35)]' : 'bg-white/45 border-white/60 shadow-[0_0_30px_rgba(16,185,129,0.15)]'}`}
+        className={`${isSidebarCollapsed ? 'w-72 lg:w-24' : 'w-72 lg:w-64'} border-r flex flex-col p-6 pb-24 lg:pb-6 fixed h-[100dvh] z-20 transition-all duration-300 overflow-y-auto backdrop-blur-xl transform ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} ${darkMode ? 'bg-white/10 border-white/20 shadow-[0_0_30px_rgba(15,23,42,0.35)]' : 'bg-white/45 border-white/60 shadow-[0_0_30px_rgba(16,185,129,0.15)]'}`}
         style={{ scrollbarWidth: 'thin' }}
       >
         <div className={`mb-12 ${isSidebarCollapsed ? 'space-y-3' : ''}`}>
@@ -1097,9 +1456,15 @@ const Admin: React.FC = () => {
               />
             </button>
             <button
-              onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                  setIsMobileSidebarOpen(false);
+                  return;
+                }
+                setIsSidebarCollapsed((prev) => !prev);
+              }}
               className={`rounded-lg p-1 transition-colors ${darkMode ? 'hover:bg-slate-800' : 'hover:bg-emerald-50'}`}
-              title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={typeof window !== 'undefined' && window.innerWidth < 1024 ? 'Close sidebar' : isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
               <span className="flex flex-col justify-center gap-0.5 w-5 h-5">
                 <span className={`h-0.5 rounded-sm transition-all ${darkMode ? 'bg-slate-200' : 'bg-black'}`}></span>
@@ -1123,6 +1488,11 @@ const Admin: React.FC = () => {
                 <li key={item.label}>
                   <button
                     onClick={() => setActiveTab(item.label)}
+                    onMouseUp={() => {
+                      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                        setIsMobileSidebarOpen(false);
+                      }
+                    }}
                     title={item.label}
                     className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all ${
                       activeTab === item.label
@@ -1130,7 +1500,7 @@ const Admin: React.FC = () => {
                         : (darkMode ? 'text-slate-300 hover:text-emerald-300 hover:bg-emerald-500/15' : 'text-gray-600 hover:text-emerald-700 hover:bg-emerald-500/12')
                     }`}
                   >
-                    <span className="text-lg">{item.icon}</span>
+                    {renderMenuIcon(item)}
                     {!isSidebarCollapsed && <span className="text-sm font-medium">{item.label}</span>}
                   </button>
                 </li>
@@ -1147,6 +1517,11 @@ const Admin: React.FC = () => {
                 <li key={item.label}>
                   <button
                     onClick={() => setActiveTab(item.label)}
+                    onMouseUp={() => {
+                      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                        setIsMobileSidebarOpen(false);
+                      }
+                    }}
                     title={item.label}
                     className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all ${
                       activeTab === item.label
@@ -1235,7 +1610,21 @@ const Admin: React.FC = () => {
       </aside>
 
       {/* Main Content */}
-      <main className={`flex-grow ${isSidebarCollapsed ? 'ml-24' : 'ml-64'} p-8 transition-all duration-300`}>
+      <main className={`flex-grow ml-0 ${isSidebarCollapsed ? 'lg:ml-24' : 'lg:ml-64'} p-4 sm:p-6 lg:p-8 pb-24 lg:pb-8 transition-all duration-300`}>
+        <div className="lg:hidden mb-4">
+          <button
+            type="button"
+            onClick={() => setIsMobileSidebarOpen(true)}
+            className={`w-9 h-9 rounded-lg border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-emerald-200 text-emerald-700 hover:bg-emerald-50'}`}
+            aria-label="Open sidebar"
+          >
+            <span className="flex flex-col justify-center gap-0.5 w-4 h-4">
+              <span className="h-0.5 rounded-sm bg-current"></span>
+              <span className="h-0.5 rounded-sm bg-current"></span>
+              <span className="h-0.5 rounded-sm bg-current"></span>
+            </span>
+          </button>
+        </div>
         {activeTab === 'Dashboard' ? (
           <>
             {/* Summary Cards Grid */}
@@ -1408,7 +1797,15 @@ const Admin: React.FC = () => {
                             <td className="py-4">
                               <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 font-bold text-xs">
-                                  {getFirstName(p)[0] || 'U'}
+                                  {getProfilePhotoUrl(p) ? (
+                                    <img
+                                      src={getProfilePhotoUrl(p)}
+                                      alt={p.full_name || getFirstName(p)}
+                                      className="w-full h-full rounded-full object-cover"
+                                    />
+                                  ) : (
+                                    getFirstName(p)[0] || 'U'
+                                  )}
                                 </div>
                                 <div>
                                   <p className="text-sm font-bold text-gray-900">{getFirstName(p)}</p>
@@ -1455,76 +1852,642 @@ const Admin: React.FC = () => {
           </>
         ) : activeTab === 'Analytics' ? (
           <div className="space-y-8">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* User Growth Chart */}
-              <div className="bg-white rounded-[40px] p-8 shadow-sm border border-black/5">
-                <h3 className="text-xl font-bold mb-6">User Growth</h3>
-                <div className="h-[300px] w-full">
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+              <div className={`xl:col-span-2 rounded-[32px] p-6 md:p-8 border shadow-sm transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <div className="flex items-start justify-between mb-6">
+                  <div>
+                    <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Analytics</h3>
+                    <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-gray-400'}`}>Lifewood Report Overview</p>
+                  </div>
+                  <button className={`text-lg leading-none transition-colors ${darkMode ? 'text-slate-500 hover:text-slate-300' : 'text-gray-400 hover:text-gray-600'}`}>⋮</button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-6">
+                  <div className="space-y-4">
+                    {analyticsLegendItems.map((item) => (
+                      <div key={item.label} className="flex items-center gap-3">
+                        <div className="w-6 h-6 rounded-md" style={{ backgroundColor: item.color }} />
+                        <div>
+                          <p className={`text-3xl font-bold leading-none ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{item.value}</p>
+                          <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{item.label}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="h-[260px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={analyticsWeekData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={darkMode ? '#334155' : '#e5e7eb'} />
+                        <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: darkMode ? '#94a3b8' : '#6b7280' }} />
+                        <YAxis axisLine={false} tickLine={false} allowDecimals={false} tick={{ fontSize: 11, fill: darkMode ? '#94a3b8' : '#6b7280' }} />
+                        <Tooltip
+                          contentStyle={{
+                            borderRadius: '14px',
+                            border: 'none',
+                            boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.12)',
+                            backgroundColor: darkMode ? '#0f172a' : '#ffffff',
+                            color: darkMode ? '#f8fafc' : '#111827',
+                          }}
+                        />
+                        <Bar dataKey="employees" stackId="a" fill="#f59e0b" radius={[6, 6, 0, 0]} barSize={26} />
+                        <Bar dataKey="interns" stackId="a" fill="#22c55e" barSize={26} />
+                        <Bar dataKey="applicants" stackId="a" fill="#3b82f6" barSize={26} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className={`mt-6 rounded-2xl p-4 border ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-black/5'}`}>
+                  <p className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>Summary Insight</p>
+                  <p className={`text-sm leading-relaxed ${darkMode ? 'text-slate-300' : 'text-gray-600'}`}>
+                    Peak system activity is on <span className={`font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{peakAnalyticsDay.day}</span> with{' '}
+                    <span className={`font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{peakAnalyticsDay.total}</span> total movements.
+                    Current approval conversion is <span className={`font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{approvalRate}%</span>, and daily average activity is{' '}
+                    <span className={`font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{analyticsAveragePerDay}</span>.
+                  </p>
+                </div>
+              </div>
+
+              <div className={`rounded-[32px] p-6 md:p-8 border shadow-sm transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <div className="mb-6">
+                  <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>System Snapshot</h3>
+                  <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-gray-400'}`}>Realtime internal pipeline status</p>
+                </div>
+
+                <div className="space-y-3">
+                  <div className={`rounded-xl p-4 border ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-black/5'}`}>
+                    <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Pending User Approvals</p>
+                    <p className={`text-2xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{pendingProfiles.length}</p>
+                  </div>
+                  <div className={`rounded-xl p-4 border ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-black/5'}`}>
+                    <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Pending Applications</p>
+                    <p className={`text-2xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{pendingApplications.length}</p>
+                  </div>
+                  <div className={`rounded-xl p-4 border ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-black/5'}`}>
+                    <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Reviewed Applications</p>
+                    <p className={`text-2xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{reviewedApplications.length}</p>
+                  </div>
+                  <div className={`rounded-xl p-4 border ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-black/5'}`}>
+                    <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Active Members</p>
+                    <p className={`text-2xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{officialMemberProfiles.length}</p>
+                  </div>
+                </div>
+
+                <div className="mt-6 h-[180px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={analyticsWeekData}>
+                      <defs>
+                        <linearGradient id="systemActivityGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.55} />
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={darkMode ? '#334155' : '#e5e7eb'} />
+                      <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: darkMode ? '#94a3b8' : '#6b7280' }} />
+                      <YAxis axisLine={false} tickLine={false} allowDecimals={false} tick={{ fontSize: 11, fill: darkMode ? '#94a3b8' : '#6b7280' }} />
+                      <Tooltip
+                        contentStyle={{
+                          borderRadius: '12px',
+                          border: 'none',
+                          boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.12)',
+                          backgroundColor: darkMode ? '#0f172a' : '#ffffff',
+                          color: darkMode ? '#f8fafc' : '#111827',
+                        }}
+                      />
+                      <Area type="monotone" dataKey="total" stroke="#10b981" strokeWidth={2.5} fill="url(#systemActivityGradient)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <div className={`rounded-[28px] p-6 border shadow-sm transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <div className="mb-4">
+                  <h4 className={`text-lg font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>User Growth</h4>
+                  <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>Monthly growth trend</p>
+                </div>
+                <div className="h-[220px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={userGrowthData}>
                       <defs>
-                        <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        <linearGradient id="userGrowthGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.55} />
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#9ca3af'}} />
-                      <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#9ca3af'}} />
-                      <Tooltip 
-                        contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}}
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={darkMode ? '#334155' : '#e5e7eb'} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: darkMode ? '#94a3b8' : '#6b7280' }} />
+                      <YAxis axisLine={false} tickLine={false} allowDecimals={false} tick={{ fontSize: 11, fill: darkMode ? '#94a3b8' : '#6b7280' }} />
+                      <Tooltip
+                        contentStyle={{
+                          borderRadius: '12px',
+                          border: 'none',
+                          boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.12)',
+                          backgroundColor: darkMode ? '#0f172a' : '#ffffff',
+                          color: darkMode ? '#f8fafc' : '#111827',
+                        }}
                       />
-                      <Area type="monotone" dataKey="users" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorUsers)" />
+                      <Area type="monotone" dataKey="users" stroke="#10b981" strokeWidth={2.5} fill="url(#userGrowthGradient)" />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              {/* Task Completion Chart */}
-              <div className="bg-white rounded-[40px] p-8 shadow-sm border border-black/5">
-                <h3 className="text-xl font-bold mb-6">Task Completion Rates</h3>
-                <div className="h-[300px] w-full flex items-center justify-center">
+              <div className={`rounded-[28px] p-6 border shadow-sm transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <div className="mb-4">
+                  <h4 className={`text-lg font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Task Completion Rates</h4>
+                  <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>Completion distribution</p>
+                </div>
+                <div className="h-[220px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={taskCompletionData}
+                        dataKey="value"
+                        nameKey="name"
                         cx="50%"
                         cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="value"
+                        innerRadius={52}
+                        outerRadius={82}
+                        paddingAngle={3}
                       >
                         {taskCompletionData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip />
-                      <Legend verticalAlign="bottom" height={36}/>
+                      <Tooltip
+                        contentStyle={{
+                          borderRadius: '12px',
+                          border: 'none',
+                          boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.12)',
+                          backgroundColor: darkMode ? '#0f172a' : '#ffffff',
+                          color: darkMode ? '#f8fafc' : '#111827',
+                        }}
+                      />
+                      <Legend
+                        verticalAlign="bottom"
+                        height={32}
+                        iconType="circle"
+                        wrapperStyle={{ color: darkMode ? '#cbd5e1' : '#4b5563', fontSize: '11px' }}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              {/* Project Progress Chart */}
-              <div className="lg:col-span-2 bg-white rounded-[40px] p-8 shadow-sm border border-black/5">
-                <h3 className="text-xl font-bold mb-6">Project Progress</h3>
-                <div className="h-[300px] w-full">
+              <div className={`rounded-[28px] p-6 border shadow-sm transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <div className="mb-4">
+                  <h4 className={`text-lg font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Project Progress</h4>
+                  <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>Current team progress by area</p>
+                </div>
+                <div className="h-[220px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={projectProgressData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#9ca3af'}} />
-                      <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#9ca3af'}} />
-                      <Tooltip 
-                        cursor={{fill: '#f9fafb'}}
-                        contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}}
+                    <BarChart data={projectProgressData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={darkMode ? '#334155' : '#e5e7eb'} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: darkMode ? '#94a3b8' : '#6b7280' }} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: darkMode ? '#94a3b8' : '#6b7280' }} />
+                      <Tooltip
+                        contentStyle={{
+                          borderRadius: '12px',
+                          border: 'none',
+                          boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.12)',
+                          backgroundColor: darkMode ? '#0f172a' : '#ffffff',
+                          color: darkMode ? '#f8fafc' : '#111827',
+                        }}
                       />
-                      <Bar dataKey="progress" fill="#10b981" radius={[10, 10, 0, 0]} barSize={40} />
+                      <Bar dataKey="progress" fill="#0ea5e9" radius={[6, 6, 0, 0]} barSize={26} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
             </div>
+          </div>
+        ) : activeTab === 'Task' ? (
+          <div className="space-y-8">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div>
+                <h2 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-[#1a1a1a]'}`}>Task</h2>
+                <p className={darkMode ? 'text-slate-400' : 'text-gray-500'}>Create and assign tasks for interns or employees.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className={`text-xs font-bold uppercase tracking-widest ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>Audience</label>
+                <select
+                  value={taskRoleFilter}
+                  onChange={(e) => setTaskRoleFilter(e.target.value as AdminTaskRole)}
+                  className={`px-4 py-3 rounded-xl border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
+                    darkMode ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-black/10 text-gray-800'
+                  }`}
+                >
+                  <option value="intern">Interns</option>
+                  <option value="employee">Employees</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-6">
+              <div className={`rounded-[28px] p-6 border shadow-sm min-h-[280px] flex flex-col justify-between ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <div>
+                  <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-emerald-300' : 'text-emerald-600'}`}>Create Task</p>
+                  <h3 className={`text-xl font-bold mt-2 ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>New Assignment</h3>
+                  <p className={`text-sm mt-2 ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                    Add task details for {taskRoleFilter === 'intern' ? 'Interns' : 'Employees'}.
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={openCreateTaskModal}
+                    className={`w-full h-14 rounded-2xl border-2 border-dashed flex items-center justify-center text-3xl font-semibold transition-colors ${
+                      darkMode
+                        ? 'border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/10'
+                        : 'border-emerald-300 text-emerald-600 hover:bg-emerald-50'
+                    }`}
+                    title="Create task"
+                  >
+                    +
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openCreateTaskModal}
+                    className="w-full py-3 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-500 transition-colors"
+                  >
+                    Upload
+                  </button>
+                </div>
+              </div>
+
+              <div className={`relative rounded-[28px] p-6 border shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-emerald-300' : 'text-emerald-600'}`}>Create Task</p>
+                <div className="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 max-h-[360px] overflow-y-auto pr-1">
+                  {createdAssignmentTasks.length === 0 ? (
+                    <div className={`rounded-xl p-6 border text-center md:col-span-2 xl:col-span-3 ${darkMode ? 'border-slate-700 text-slate-400' : 'border-black/10 text-gray-500'}`}>
+                      No tasks yet for {taskRoleFilter === 'intern' ? 'Interns' : 'Employees'}.
+                    </div>
+                  ) : (
+                    createdAssignmentTasks.map((task) => (
+                      <div key={task.id} className={`rounded-xl p-4 border aspect-square flex flex-col ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-black/10'}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className={`text-[11px] ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>Started: {formatTaskDate(task.startedAt)}</p>
+                            <p className={`text-[11px] font-semibold ${darkMode ? 'text-orange-300' : 'text-orange-600'}`}>Deadline: {formatTaskDate(task.deadline)}</p>
+                          </div>
+                          <span className={`text-[10px] px-2 py-1 rounded-full font-bold ${darkMode ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
+                            {task.entryType}
+                          </span>
+                        </div>
+                        <p className={`text-xs mt-3 flex-1 overflow-auto ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>{task.description}</p>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openEditTaskModal(task)}
+                            className={`rounded-lg px-3 py-2 text-xs font-semibold border transition-colors ${
+                              darkMode ? 'border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10' : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'
+                            }`}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => requestDeleteTask(task)}
+                            className={`rounded-lg px-3 py-2 text-xs font-semibold border transition-colors ${
+                              darkMode ? 'border-rose-500/40 text-rose-300 hover:bg-rose-500/10' : 'border-rose-300 text-rose-700 hover:bg-rose-50'
+                            }`}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {taskRoleFilter === 'intern' && (
+              <div className={`rounded-[28px] p-5 border shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-widest mb-3 ${darkMode ? 'text-emerald-300' : 'text-emerald-600'}`}>Intern Progress</p>
+                {approvedInternProfiles.length === 0 ? (
+                  <p className={`${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>No approved interns found.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 max-h-[520px] overflow-y-auto pr-1">
+                    {approvedInternProfiles
+                      .slice()
+                      .sort((a, b) => getFirstName(a).localeCompare(getFirstName(b), undefined, { sensitivity: 'base' }))
+                      .map((intern) => {
+                        const internCompletion = clampPercentage(intern?.completion, 0);
+                        const internEfficiency = clampPercentage(intern?.efficiency, 0);
+                        const internOverall = Math.max(0, Math.min(100, Math.round(internCompletion * 0.7 + internEfficiency * 0.3)));
+                        const assignedInternTasks = filteredAdminTasks
+                          .filter((task) => task.assignedProfileId === intern.id)
+                          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                        const nearestInternDeadlineTask = assignedInternTasks
+                          .map((task) => ({ ...task, deadlineTime: new Date(task.deadline).getTime() }))
+                          .filter((task) => Number.isFinite(task.deadlineTime))
+                          .sort((a, b) => a.deadlineTime - b.deadlineTime)[0];
+                        const internDeadlineStatusText = (() => {
+                          if (!nearestInternDeadlineTask) return 'No deadline yet';
+                          const now = new Date();
+                          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                          const deadlineDay = new Date(nearestInternDeadlineTask.deadline).getTime();
+                          const daysLeft = Math.ceil((deadlineDay - today) / (1000 * 60 * 60 * 24));
+                          if (daysLeft < 0) return `${Math.abs(daysLeft)} day(s) overdue`;
+                          if (daysLeft === 0) return 'Due today';
+                          return `${daysLeft} day(s) left`;
+                        })();
+
+                        return (
+                          <div key={`intern-progress-card-${intern.id}`} className={`relative rounded-2xl p-4 border ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-gray-50 border-black/10'}`}>
+                            <button
+                              type="button"
+                              onClick={() => openCreateTaskModal({ assignee: intern, source: 'intern-card' })}
+                              className={`absolute right-3 top-3 w-8 h-8 rounded-full border flex items-center justify-center text-lg font-semibold ${
+                                darkMode
+                                  ? 'border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/15'
+                                  : 'border-emerald-300 text-emerald-600 hover:bg-emerald-50'
+                              }`}
+                              title="Add task"
+                            >
+                              +
+                            </button>
+                            <p className={`text-sm font-semibold mb-2 ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{intern.full_name || getFirstName(intern)}</p>
+                            <div className="flex items-start gap-3">
+                              <div className="flex flex-col items-center gap-1">
+                                <div className={`relative w-14 h-24 rounded-[16px] border-2 overflow-hidden ${darkMode ? 'border-emerald-400/60 bg-slate-800' : 'border-emerald-400 bg-emerald-50/40'}`}>
+                                  <div className="absolute bottom-0 left-0 right-0 bg-emerald-400/80 transition-all duration-300" style={{ height: `${internOverall}%` }} />
+                                </div>
+                                <p className={`text-[10px] ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>{internOverall}%</p>
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className={`text-[11px] font-semibold ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>Deadline</p>
+                                <p className={`text-[11px] mb-2 ${darkMode ? 'text-orange-300' : 'text-orange-600'}`}>{internDeadlineStatusText}</p>
+                                <p className={`text-[11px] font-semibold ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>Task added</p>
+                                <ul className={`text-[10px] space-y-1 max-h-14 overflow-y-auto pr-1 ${darkMode ? 'text-slate-400' : 'text-gray-600'}`}>
+                                  {assignedInternTasks.length === 0 ? (
+                                    <li>No intern task yet</li>
+                                  ) : (
+                                    assignedInternTasks.slice(0, 3).map((task) => (
+                                      <li key={`intern-progress-${intern.id}-${task.id}`} className="truncate">- {task.title}</li>
+                                    ))
+                                  )}
+                                </ul>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isTaskModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="absolute inset-0 bg-black/50" onClick={closeTaskModal} />
+                <div className={`relative w-full max-w-4xl rounded-[28px] p-6 md:p-8 border shadow-2xl max-h-[90vh] overflow-y-auto ${
+                  darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-black/10'
+                }`}>
+                  <div className="flex items-start justify-between gap-4 mb-6">
+                    <div>
+                      <h3 className={`text-2xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                        {editingTaskId ? `Edit ${taskEntryType}` : `New ${taskEntryType}`}
+                      </h3>
+                      {taskAssignee && (
+                        <p className={`mt-1 text-sm ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                          Assign to: {taskAssignee.name}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeTaskModal}
+                      className={`w-9 h-9 rounded-lg border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-800' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                    >
+                      x
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div>
+                        <label className={`block text-xs font-bold uppercase tracking-widest mb-2 ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>Type</label>
+                        <select
+                          value={taskEntryType}
+                          onChange={(e) => setTaskEntryType(e.target.value as 'Task' | 'Projects')}
+                          className={`w-full rounded-xl border px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
+                            darkMode ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-black/10 text-gray-800'
+                          }`}
+                        >
+                          <option value="Task">Task</option>
+                          <option value="Projects">Projects</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className={`block text-xs font-bold uppercase tracking-widest mb-2 ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>Description</label>
+                        <textarea
+                          value={taskDescription}
+                          onChange={(e) => setTaskDescription(e.target.value)}
+                          rows={4}
+                          placeholder="Write the task description..."
+                          className={`w-full rounded-xl border px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
+                            darkMode ? 'bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-500' : 'bg-white border-black/10 text-gray-800 placeholder:text-gray-400'
+                          }`}
+                        />
+                      </div>
+
+                      {taskModalSource === 'new-assignment' && (
+                        <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'border-emerald-500/40' : 'border-emerald-400'}`}>
+                          <table className="w-full border-collapse">
+                            <tbody>
+                              <tr>
+                                <td className={`align-top p-3 border-r border-b ${darkMode ? 'border-emerald-500/30 bg-slate-900' : 'border-emerald-300 bg-white'}`}>
+                                  <label className={`block text-xs font-bold uppercase tracking-widest mb-2 ${darkMode ? 'text-emerald-300' : 'text-gray-600'}`}>Lifewood Branding</label>
+                                  <input
+                                    value={taskCriteria.lifewoodBranding}
+                                    onChange={(e) => setTaskCriteria((prev) => ({ ...prev, lifewoodBranding: e.target.value }))}
+                                    className={`w-full rounded-xl border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
+                                      darkMode ? 'bg-slate-800 border-emerald-500/30 text-slate-100' : 'bg-white border-emerald-300 text-gray-800'
+                                    }`}
+                                  />
+                                </td>
+                                <td className={`align-top p-3 border-b ${darkMode ? 'border-emerald-500/30 bg-slate-900' : 'border-emerald-300 bg-white'}`}>
+                                  <label className={`block text-xs font-bold uppercase tracking-widest mb-2 ${darkMode ? 'text-emerald-300' : 'text-gray-600'}`}>Color Pallets</label>
+                                  <input
+                                    value={taskCriteria.colorPalettes}
+                                    onChange={(e) => setTaskCriteria((prev) => ({ ...prev, colorPalettes: e.target.value }))}
+                                    className={`w-full rounded-xl border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
+                                      darkMode ? 'bg-slate-800 border-emerald-500/30 text-slate-100' : 'bg-white border-emerald-300 text-gray-800'
+                                    }`}
+                                  />
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className={`align-top p-3 border-r ${darkMode ? 'border-emerald-500/30 bg-slate-900' : 'border-emerald-300 bg-white'}`}>
+                                  <label className={`block text-xs font-bold uppercase tracking-widest mb-2 ${darkMode ? 'text-emerald-300' : 'text-gray-600'}`}>Design</label>
+                                  <input
+                                    value={taskCriteria.design}
+                                    onChange={(e) => setTaskCriteria((prev) => ({ ...prev, design: e.target.value }))}
+                                    className={`w-full rounded-xl border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
+                                      darkMode ? 'bg-slate-800 border-emerald-500/30 text-slate-100' : 'bg-white border-emerald-300 text-gray-800'
+                                    }`}
+                                  />
+                                  <div className="mt-2 space-y-1">
+                                    <p className={`text-[11px] font-semibold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                                      Total : {criteriaTotalScore}
+                                    </p>
+                                    <p className={`text-[11px] font-semibold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                                      Passing Score : {criteriaPassingScore}
+                                    </p>
+                                  </div>
+                                </td>
+                                <td className={`align-top p-3 ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                                  <label className={`block text-xs font-bold uppercase tracking-widest mb-2 ${darkMode ? 'text-emerald-300' : 'text-gray-600'}`}>Content</label>
+                                  <input
+                                    value={taskCriteria.content}
+                                    onChange={(e) => setTaskCriteria((prev) => ({ ...prev, content: e.target.value }))}
+                                    className={`w-full rounded-xl border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
+                                      darkMode ? 'bg-slate-800 border-emerald-500/30 text-slate-100' : 'bg-white border-emerald-300 text-gray-800'
+                                    }`}
+                                  />
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className={`block text-xs font-bold uppercase tracking-widest mb-2 ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>File</label>
+                        <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer text-sm font-medium ${
+                          darkMode ? 'border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10' : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'
+                        }`}>
+                          Choose File
+                          <input type="file" className="hidden" onChange={handleTaskAttachmentChange} />
+                        </label>
+                        <div className={`mt-2 text-xs ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                          {taskAttachment ? `${taskAttachment.name} (${Math.max(1, Math.round(taskAttachment.size / 1024))} KB)` : 'No file selected'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className={`block text-xs font-bold uppercase tracking-widest mb-2 ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>Set Deadline</label>
+                      <div className={`rounded-2xl border p-4 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-gray-50 border-black/10'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                          <button
+                            type="button"
+                            onClick={() => setTaskCalendarView(new Date(taskCalendarView.getFullYear(), taskCalendarView.getMonth() - 1, 1))}
+                            className={`w-8 h-8 rounded-lg border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-gray-200 text-gray-600 hover:bg-white'}`}
+                          >
+                            {'<'}
+                          </button>
+                          <p className={`text-sm font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-800'}`}>{taskCalendarMonthLabel}</p>
+                          <button
+                            type="button"
+                            onClick={() => setTaskCalendarView(new Date(taskCalendarView.getFullYear(), taskCalendarView.getMonth() + 1, 1))}
+                            className={`w-8 h-8 rounded-lg border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-gray-200 text-gray-600 hover:bg-white'}`}
+                          >
+                            {'>'}
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-7 gap-1 mb-2">
+                          {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((dayLabel) => (
+                            <p key={dayLabel} className={`text-center text-[11px] font-semibold ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>
+                              {dayLabel}
+                            </p>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-7 gap-1">
+                          {taskCalendarDays.map((dayValue, index) => {
+                            if (!dayValue) {
+                              return <div key={`empty-${index}`} className="h-9" />;
+                            }
+
+                            const selectedDateValue = `${taskCalendarView.getFullYear()}-${String(taskCalendarView.getMonth() + 1).padStart(2, '0')}-${String(dayValue).padStart(2, '0')}`;
+                            const isSelected = taskDeadline === selectedDateValue;
+
+                            return (
+                              <button
+                                key={selectedDateValue}
+                                type="button"
+                                onClick={() => setTaskDeadline(selectedDateValue)}
+                                className={`h-9 rounded-lg text-sm font-medium transition-colors ${
+                                  isSelected
+                                    ? 'bg-orange-500 text-white'
+                                    : darkMode
+                                      ? 'text-slate-200 hover:bg-emerald-500/25 hover:text-emerald-200'
+                                      : 'text-gray-700 hover:bg-emerald-100 hover:text-emerald-700'
+                                }`}
+                              >
+                                {dayValue}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className={`mt-3 text-sm font-medium ${taskDeadline ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-slate-400' : 'text-gray-500')}`}>
+                        {taskDeadline ? `Deadline selected: ${formatTaskDate(taskDeadline)}` : 'No deadline selected'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {taskFormNotice && (
+                    <p className="mt-5 text-sm text-red-500">{taskFormNotice}</p>
+                  )}
+
+                  <div className="mt-6 flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={closeTaskModal}
+                      className={`px-5 py-2.5 rounded-xl text-sm font-semibold border transition-colors ${
+                        darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmTask}
+                      className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
+                    >
+                      {editingTaskId ? 'Update' : 'Confirm'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {taskPendingDelete && (
+              <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                <div className="absolute inset-0 bg-black/50" onClick={closeDeleteTaskModal} />
+                <div className={`relative w-full max-w-md rounded-2xl p-6 border shadow-2xl ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-black/10'}`}>
+                  <h4 className={`text-lg font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Delete Task</h4>
+                  <p className={`mt-2 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-600'}`}>
+                    Are you sure you want to delete this task? This action cannot be undone.
+                  </p>
+                  <div className="mt-5 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={closeDeleteTaskModal}
+                      className={`px-4 py-2 rounded-lg text-sm font-semibold border ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-800' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmDeleteTask}
+                      className="px-4 py-2 rounded-lg text-sm font-semibold bg-rose-600 text-white hover:bg-rose-500"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         ) : activeTab === 'Evaluation' ? (
           <div className="space-y-8">
@@ -2651,5 +3614,4 @@ const Admin: React.FC = () => {
 };
 
 export default Admin;
-
 

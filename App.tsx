@@ -23,6 +23,7 @@ import SignIn from './components/SignIn';
 import Admin from './components/Admin';
 import User from './components/User';
 import Employees from './components/Employees';
+import PendingApproval from './components/PendingApproval';
 import CookieSettingsModal from './components/CookieSettingsModal';
 import HelpWidget from './components/HelpWidget';
 import { useAuth } from './context/AuthContext';
@@ -77,6 +78,8 @@ const App: React.FC = () => {
 
   const normalizedRole = (profile?.role || '').toString().trim().toLowerCase();
   const isEmployeeUser = normalizedRole === 'employee';
+  const isAdminUser = (user?.email || '').trim().toLowerCase() === ADMIN_EMAIL || isAdmin;
+  const isPendingApproval = Boolean(user) && !isAdminUser && !isApproved;
 
   let currentPage;
   switch (route) {
@@ -132,7 +135,9 @@ const App: React.FC = () => {
     case '/admin':
       if (!user) {
         currentPage = <SignIn />;
-      } else if ((user.email || '').trim().toLowerCase() === ADMIN_EMAIL || isAdmin) {
+      } else if (isPendingApproval) {
+        currentPage = <PendingApproval />;
+      } else if (isAdminUser) {
         currentPage = <Admin />;
       } else if (isEmployeeUser) {
         currentPage = <Employees />;
@@ -143,7 +148,9 @@ const App: React.FC = () => {
     case '/user':
       if (!user) {
         currentPage = <SignIn />;
-      } else if ((user.email || '').trim().toLowerCase() === ADMIN_EMAIL || isAdmin) {
+      } else if (isPendingApproval) {
+        currentPage = <PendingApproval />;
+      } else if (isAdminUser) {
         currentPage = <Admin />;
       } else if (isEmployeeUser) {
         currentPage = <Employees />;
@@ -154,7 +161,9 @@ const App: React.FC = () => {
     case '/employees':
       if (!user) {
         currentPage = <SignIn />;
-      } else if ((user.email || '').trim().toLowerCase() === ADMIN_EMAIL || isAdmin) {
+      } else if (isPendingApproval) {
+        currentPage = <PendingApproval />;
+      } else if (isAdminUser) {
         currentPage = <Admin />;
       } else if (isEmployeeUser) {
         currentPage = <Employees />;

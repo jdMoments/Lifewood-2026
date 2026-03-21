@@ -138,8 +138,15 @@ const SignIn: React.FC = () => {
       }
 
       const normalizedRole = (profile?.role || '').toString().trim().toLowerCase();
+      const isApprovedUser = profile?.is_approved === true;
       const isAdminUser = normalizedEmail === ADMIN_EMAIL || normalizedRole === 'admin';
       const isEmployeeUser = normalizedRole === 'employee';
+
+      if (!isAdminUser && !isApprovedUser) {
+        await supabase.auth.signOut();
+        setError('Your account is pending admin approval. Please wait for approval before signing in.');
+        return;
+      }
 
       if (isAdminUser) {
         window.location.hash = '#/admin';

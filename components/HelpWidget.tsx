@@ -19,6 +19,7 @@ const getChatScopeFromRoute = (routePath: string) => {
 const HelpWidget: React.FC = () => {
   const { user, profile } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+  const [widgetResetKey, setWidgetResetKey] = useState(0);
   const [messages, setMessages] = useState<Message[]>([
     { role: 'model', text: "Hello! I'm your Lifewood AI assistant. How can I help you today?" }
   ]);
@@ -33,6 +34,21 @@ const HelpWidget: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const handleCloseChat = () => {
+    setIsOpen(false);
+    setWidgetResetKey((prev) => prev + 1);
+  };
+
+  const handleToggleChat = () => {
+    setIsOpen((prev) => {
+      const next = !prev;
+      if (!next) {
+        setWidgetResetKey((value) => value + 1);
+      }
+      return next;
+    });
+  };
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -111,7 +127,13 @@ const HelpWidget: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-8 right-8 z-[9999] flex flex-col items-end">
+    <motion.div
+      key={widgetResetKey}
+      drag
+      dragMomentum={false}
+      dragElastic={0.12}
+      className="fixed bottom-8 right-8 z-[9999] flex flex-col items-end touch-none"
+    >
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -132,7 +154,7 @@ const HelpWidget: React.FC = () => {
                 </div>
               </div>
               <button 
-                onClick={() => setIsOpen(false)}
+                onClick={handleCloseChat}
                 className="text-gray-400 hover:text-white transition-colors"
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -224,7 +246,7 @@ const HelpWidget: React.FC = () => {
 
         {/* Help Button */}
         <button 
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={handleToggleChat}
           className="bg-black text-white rounded-full px-5 py-2 flex items-center gap-2 transition-transform hover:scale-105 active:scale-95"
         >
           <svg 
@@ -256,7 +278,7 @@ const HelpWidget: React.FC = () => {
           <span className="underline cursor-pointer">Agents</span>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 };
 
