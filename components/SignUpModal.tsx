@@ -97,7 +97,7 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose, onSuccess })
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -110,7 +110,7 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose, onSuccess })
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden text-[#1a1a1a]"
+            className="relative my-4 sm:my-8 w-full max-w-2xl max-h-[calc(100dvh-1rem)] sm:max-h-[90vh] bg-white rounded-3xl shadow-2xl overflow-y-auto overscroll-contain text-[#1a1a1a]"
           >
             <button
               onClick={onClose}
@@ -122,7 +122,7 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose, onSuccess })
               </svg>
             </button>
 
-            <div className="p-8 md:p-12">
+            <div className="p-6 md:p-12 pb-10 md:pb-12">
               <div className="mb-10">
                 <h2 className="text-3xl font-bold mb-2">Create account</h2>
                 <p className="text-gray-500 text-sm">For Business, Brand & Celebrity</p>
