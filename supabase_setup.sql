@@ -21,6 +21,7 @@ create table if not exists public.profiles (
   nick_name text,
   avatar_url text,
   phone text,
+  position text,
   dob text,
   gender text default 'Male',
   role text default 'applicant',
@@ -48,6 +49,7 @@ alter table public.profiles add column if not exists full_name text;
 alter table public.profiles add column if not exists nick_name text;
 alter table public.profiles add column if not exists avatar_url text;
 alter table public.profiles add column if not exists phone text;
+alter table public.profiles add column if not exists position text;
 alter table public.profiles add column if not exists dob text;
 alter table public.profiles add column if not exists gender text default 'Male';
 alter table public.profiles add column if not exists role text default 'applicant';
@@ -305,7 +307,87 @@ for delete
 using (public.is_admin_request());
 
 -- ==========================================
--- 4. PROFILE SELF-HEAL RPC
+-- 4. PROJECT SUBMISSIONS TABLE + RLS
+-- ==========================================
+do $$
+begin
+  if to_regclass('public.project_submissions') is null
+     and to_regclass('public.project_submission') is not null then
+    execute 'alter table public.project_submission rename to project_submissions';
+  end if;
+end $$;
+
+create table if not exists public.project_submissions (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamptz default timezone('utc'::text, now()) not null,
+  user_id uuid references auth.users on delete set null,
+  full_name text not null,
+  email text not null,
+  contact_number text not null,
+  project_name text not null,
+  description text not null,
+  project_link text,
+  resource_link text,
+  uploaded_file_name text,
+  main_ai_need text not null,
+  status text default 'pending' not null
+);
+
+alter table public.project_submissions add column if not exists created_at timestamptz default timezone('utc'::text, now());
+alter table public.project_submissions add column if not exists user_id uuid references auth.users on delete set null;
+alter table public.project_submissions add column if not exists full_name text;
+alter table public.project_submissions add column if not exists email text;
+alter table public.project_submissions add column if not exists contact_number text;
+alter table public.project_submissions add column if not exists project_name text;
+alter table public.project_submissions add column if not exists description text;
+alter table public.project_submissions add column if not exists project_link text;
+alter table public.project_submissions add column if not exists resource_link text;
+alter table public.project_submissions add column if not exists uploaded_file_name text;
+alter table public.project_submissions add column if not exists main_ai_need text;
+alter table public.project_submissions add column if not exists status text default 'pending';
+
+alter table public.project_submissions drop constraint if exists project_submissions_status_check;
+alter table public.project_submissions
+  add constraint project_submissions_status_check
+  check (status in ('pending', 'accepted', 'declined'));
+
+alter table public.project_submissions enable row level security;
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin
+      execute 'alter publication supabase_realtime add table public.project_submissions';
+    exception
+      when duplicate_object then
+        null;
+    end;
+  end if;
+end $$;
+
+drop policy if exists "Public can submit project submissions" on public.project_submissions;
+create policy "Public can submit project submissions" on public.project_submissions
+for insert
+with check (true);
+
+drop policy if exists "Admins can view project submissions" on public.project_submissions;
+create policy "Admins can view project submissions" on public.project_submissions
+for select
+using (public.is_admin_request());
+
+drop policy if exists "Admins can update project submissions" on public.project_submissions;
+create policy "Admins can update project submissions" on public.project_submissions
+for update
+using (public.is_admin_request())
+with check (public.is_admin_request());
+
+drop policy if exists "Admins can delete project submissions" on public.project_submissions;
+create policy "Admins can delete project submissions" on public.project_submissions
+for delete
+using (public.is_admin_request());
+
+-- ==========================================
+-- 5. PROFILE SELF-HEAL RPC
 -- ==========================================
 create or replace function public.ensure_my_profile()
 returns void
@@ -363,7 +445,7 @@ $$;
 grant execute on function public.ensure_my_profile() to authenticated;
 
 -- ==========================================
--- 5. SIGNUP TRIGGER
+-- 6. SIGNUP TRIGGER
 -- ==========================================
 create or replace function public.handle_new_user()
 returns trigger
@@ -441,7 +523,7 @@ after insert on auth.users
 for each row execute procedure public.handle_new_user();
 
 -- ==========================================
--- 6. BACKFILL ALL EXISTING AUTH USERS
+-- 7. BACKFILL ALL EXISTING AUTH USERS
 -- ==========================================
 insert into public.profiles (
   id, email, full_name, avatar_url, phone, dob, role, is_approved, is_declined, created_at, updated_at
@@ -491,14 +573,138 @@ set
   updated_at = timezone('utc'::text, now());
 
 -- ==========================================
--- 7. FORCE ADMIN ACCOUNT(S)
+-- 8. FORCE ADMIN ACCOUNT(S)
 -- ==========================================
 update public.profiles
 set role = 'admin', is_approved = true, updated_at = timezone('utc'::text, now())
 where lower(email) in ('damayojholmer@gmail.com', 'jholmerdamayo@gmail.com');
 
 -- ==========================================
--- 8. VERIFICATION
+-- 9. SETTINGS HISTORY + SECURITY LOG TABLES
+-- ==========================================
+create table if not exists public.admin_account_history (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamptz default timezone('utc'::text, now()) not null,
+  action text default 'deleted' not null,
+  source text default 'application' not null,
+  reference_id uuid,
+  full_name text,
+  email text,
+  notes text,
+  acted_by uuid references auth.users on delete set null
+);
+
+alter table public.admin_account_history add column if not exists created_at timestamptz default timezone('utc'::text, now());
+alter table public.admin_account_history add column if not exists action text default 'deleted';
+alter table public.admin_account_history add column if not exists source text default 'application';
+alter table public.admin_account_history add column if not exists reference_id uuid;
+alter table public.admin_account_history add column if not exists full_name text;
+alter table public.admin_account_history add column if not exists email text;
+alter table public.admin_account_history add column if not exists notes text;
+alter table public.admin_account_history add column if not exists acted_by uuid references auth.users on delete set null;
+
+alter table public.admin_account_history drop constraint if exists admin_account_history_action_check;
+alter table public.admin_account_history
+  add constraint admin_account_history_action_check
+  check (action in ('archived', 'deleted'));
+
+alter table public.admin_account_history enable row level security;
+
+drop policy if exists "Admins can view account history" on public.admin_account_history;
+create policy "Admins can view account history" on public.admin_account_history
+for select using (public.is_admin_request());
+
+drop policy if exists "Admins can insert account history" on public.admin_account_history;
+create policy "Admins can insert account history" on public.admin_account_history
+for insert with check (public.is_admin_request());
+
+drop policy if exists "Admins can delete account history" on public.admin_account_history;
+create policy "Admins can delete account history" on public.admin_account_history
+for delete using (public.is_admin_request());
+
+create table if not exists public.admin_project_history (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamptz default timezone('utc'::text, now()) not null,
+  action text default 'deleted' not null,
+  source_table text default 'project_submissions',
+  reference_id uuid,
+  full_name text,
+  email text,
+  project_name text,
+  notes text,
+  acted_by uuid references auth.users on delete set null
+);
+
+alter table public.admin_project_history add column if not exists created_at timestamptz default timezone('utc'::text, now());
+alter table public.admin_project_history add column if not exists action text default 'deleted';
+alter table public.admin_project_history add column if not exists source_table text default 'project_submissions';
+alter table public.admin_project_history add column if not exists reference_id uuid;
+alter table public.admin_project_history add column if not exists full_name text;
+alter table public.admin_project_history add column if not exists email text;
+alter table public.admin_project_history add column if not exists project_name text;
+alter table public.admin_project_history add column if not exists notes text;
+alter table public.admin_project_history add column if not exists acted_by uuid references auth.users on delete set null;
+
+alter table public.admin_project_history drop constraint if exists admin_project_history_action_check;
+alter table public.admin_project_history
+  add constraint admin_project_history_action_check
+  check (action in ('declined', 'deleted'));
+
+alter table public.admin_project_history enable row level security;
+
+drop policy if exists "Admins can view project history" on public.admin_project_history;
+create policy "Admins can view project history" on public.admin_project_history
+for select using (public.is_admin_request());
+
+drop policy if exists "Admins can insert project history" on public.admin_project_history;
+create policy "Admins can insert project history" on public.admin_project_history
+for insert with check (public.is_admin_request());
+
+drop policy if exists "Admins can delete project history" on public.admin_project_history;
+create policy "Admins can delete project history" on public.admin_project_history
+for delete using (public.is_admin_request());
+
+create table if not exists public.admin_login_activity (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamptz default timezone('utc'::text, now()) not null,
+  user_id uuid references auth.users on delete set null,
+  user_email text,
+  device_type text,
+  browser text,
+  os text,
+  user_agent text,
+  login_at timestamptz default timezone('utc'::text, now()) not null
+);
+
+alter table public.admin_login_activity add column if not exists created_at timestamptz default timezone('utc'::text, now());
+alter table public.admin_login_activity add column if not exists user_id uuid references auth.users on delete set null;
+alter table public.admin_login_activity add column if not exists user_email text;
+alter table public.admin_login_activity add column if not exists device_type text;
+alter table public.admin_login_activity add column if not exists browser text;
+alter table public.admin_login_activity add column if not exists os text;
+alter table public.admin_login_activity add column if not exists user_agent text;
+alter table public.admin_login_activity add column if not exists login_at timestamptz default timezone('utc'::text, now());
+
+alter table public.admin_login_activity enable row level security;
+
+drop policy if exists "Admins can view login activity" on public.admin_login_activity;
+create policy "Admins can view login activity" on public.admin_login_activity
+for select using (public.is_admin_request());
+
+drop policy if exists "Authenticated can insert own login activity" on public.admin_login_activity;
+create policy "Authenticated can insert own login activity" on public.admin_login_activity
+for insert
+with check (
+  auth.uid() = user_id
+  or public.is_admin_request()
+);
+
+drop policy if exists "Admins can delete login activity" on public.admin_login_activity;
+create policy "Admins can delete login activity" on public.admin_login_activity
+for delete using (public.is_admin_request());
+
+-- ==========================================
+-- 10. VERIFICATION
 -- ==========================================
 select id, profile_code, email, role, is_approved, created_at
 from public.profiles
@@ -508,9 +714,25 @@ select id, first_name, last_name, email, phone, project_applied, status, created
 from public.applications
 order by created_at desc nulls last;
 
+select id, full_name, email, project_name, status, created_at
+from public.project_submissions
+order by created_at desc nulls last;
+
 select id, profile_code, email, role, is_approved
 from public.profiles
 where coalesce(is_approved, false) = false
   and coalesce(is_declined, false) = false
   and lower(coalesce(email, '')) not in ('damayojholmer@gmail.com', 'jholmerdamayo@gmail.com')
 order by created_at desc nulls last;
+
+select id, action, source, full_name, email, created_at
+from public.admin_account_history
+order by created_at desc nulls last;
+
+select id, action, project_name, full_name, email, created_at
+from public.admin_project_history
+order by created_at desc nulls last;
+
+select id, user_email, device_type, browser, os, login_at
+from public.admin_login_activity
+order by login_at desc nulls last;

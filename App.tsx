@@ -118,7 +118,10 @@ const App: React.FC = () => {
       currentPage = <ContactUs />;
       break;
     case '/internal-news':
-      currentPage = <InternalNews />;
+      currentPage = <InternalNews initialView="internal" />;
+      break;
+    case '/external-news':
+      currentPage = <InternalNews initialView="external" />;
       break;
     case '/privacy-policy':
       currentPage = <PrivacyPolicy />;
@@ -182,7 +185,7 @@ const App: React.FC = () => {
 
   return (
     <div className="font-sans transition-colors duration-300">
-      {route !== '/aiprojects' && route !== '/internal-news' && route !== '/careers' && route !== '/offices' && route !== '/about' && route !== '/tads' && route !== '/horizontal' && route !== '/vertical' && route !== '/typed' && route !== '/phipact' && route !== '/contact' && route !== '/privacy-policy' && route !== '/cookie-policy' && route !== '/terms-and-conditions' && route !== '/signin' && route !== '/admin' && route !== '/user' && route !== '/employees' && <Background />}
+      {route !== '/aiprojects' && route !== '/internal-news' && route !== '/external-news' && route !== '/careers' && route !== '/offices' && route !== '/about' && route !== '/tads' && route !== '/horizontal' && route !== '/vertical' && route !== '/typed' && route !== '/phipact' && route !== '/contact' && route !== '/privacy-policy' && route !== '/cookie-policy' && route !== '/terms-and-conditions' && route !== '/signin' && route !== '/admin' && route !== '/user' && route !== '/employees' && <Background />}
       {route !== '/signin' && route !== '/admin' && route !== '/user' && route !== '/employees' && <Navbar />}
       <main>
         {currentPage}

@@ -7,13 +7,33 @@ import Aurora from './Aurora';
 
 type UserSection = 'Dashboard' | 'My Progress' | 'Tasks' | 'Performance' | 'Settings';
 
-const SAMPLE_TASKS: Array<{ id: string; title: string; completed: boolean }> = [
-  { id: 'task-1', title: 'Complete AI onboarding module', completed: false },
-  { id: 'task-2', title: 'Watch prompt engineering lesson', completed: false },
-  { id: 'task-3', title: 'Submit dashboard design draft', completed: false },
-  { id: 'task-4', title: 'Review model evaluation checklist', completed: false },
-  { id: 'task-5', title: 'Join weekly mentorship session', completed: false },
-];
+type AdminTaskAttachment = {
+  name: string;
+  size: number;
+  type: string;
+};
+
+type AdminTaskCriteria = {
+  lifewoodBranding: string;
+  colorPalettes: string;
+  design: string;
+  content: string;
+};
+
+type AdminTaskItem = {
+  id: string;
+  title: string;
+  targetRole: 'intern' | 'employee';
+  assignedProfileId?: string | null;
+  description: string;
+  entryType?: 'Task' | 'Projects';
+  criteria?: AdminTaskCriteria;
+  attachment?: AdminTaskAttachment | null;
+  deadline?: string;
+  startedAt?: string;
+  createdAt?: string;
+  completed?: boolean;
+};
 
 const User: React.FC = () => {
   const { user, loading: authLoading, signOut: authSignOut } = useAuth();
@@ -38,6 +58,8 @@ const User: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [taskSearchTerm, setTaskSearchTerm] = useState('');
+  const [adminTasks, setAdminTasks] = useState<AdminTaskItem[]>([]);
+  const [selectedAdminTask, setSelectedAdminTask] = useState<AdminTaskItem | null>(null);
 
   useEffect(() => {
     localStorage.setItem('userDarkMode', darkMode.toString());
@@ -62,6 +84,19 @@ const User: React.FC = () => {
     }
   }, [user, authLoading]);
 
+  useEffect(() => {
+    if (!user || typeof window === 'undefined') return;
+
+    loadAdminTasks();
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key && event.key !== 'lifewood_admin_tasks_v1') return;
+      loadAdminTasks();
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [user?.id]);
+
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
@@ -85,6 +120,53 @@ const User: React.FC = () => {
   const handleSignOut = async () => {
     await authSignOut();
     window.location.hash = '#/signin';
+  };
+
+  const loadAdminTasks = () => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const raw = window.localStorage.getItem('lifewood_admin_tasks_v1');
+      if (!raw) {
+        setAdminTasks([]);
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        setAdminTasks([]);
+        return;
+      }
+
+      const normalized: AdminTaskItem[] = parsed
+        .filter((item: any) => item && typeof item === 'object' && typeof item.id === 'string')
+        .map((item: any) => ({
+          id: String(item.id),
+          title: String(item.title || ''),
+          targetRole: item.targetRole === 'employee' ? 'employee' : 'intern',
+          assignedProfileId: item.assignedProfileId ?? null,
+          description: String(item.description || ''),
+          entryType: item.entryType === 'Projects' ? 'Projects' : 'Task',
+          criteria: item.criteria || undefined,
+          attachment: item.attachment || null,
+          deadline: item.deadline || '',
+          startedAt: item.startedAt || '',
+          createdAt: item.createdAt || '',
+          completed: Boolean(item.completed),
+        }));
+
+      setAdminTasks(normalized);
+    } catch (error) {
+      console.error('Unable to load admin tasks from storage:', error);
+      setAdminTasks([]);
+    }
+  };
+
+  const formatTaskDate = (dateValue?: string) => {
+    if (!dateValue) return 'N/A';
+    const parsed = new Date(dateValue);
+    if (Number.isNaN(parsed.getTime())) return 'N/A';
+    return parsed.toLocaleDateString();
   };
 
   const toggleGoalCompletion = async (goalId: string, currentStatus: boolean) => {
@@ -222,11 +304,40 @@ const User: React.FC = () => {
     'Performance': 'This is a Performance',
     'Settings': 'This is Settings',
   };
-  const filteredTasks = SAMPLE_TASKS.filter((task) =>
-    task.title.toLowerCase().includes(taskSearchTerm.trim().toLowerCase())
+  const internAdminTasks = adminTasks.filter(
+    (task) => task.targetRole === 'intern' && (!task.assignedProfileId || task.assignedProfileId === user.id)
   );
-  const completedTaskCount = SAMPLE_TASKS.filter((task) => task.completed).length;
-  const totalTaskCount = SAMPLE_TASKS.length;
+  const filteredTasks = internAdminTasks.filter((task) =>
+    (task.title || '').toLowerCase().includes(taskSearchTerm.trim().toLowerCase())
+  );
+  const completedTaskCount = internAdminTasks.filter((task) => Boolean(task.completed)).length;
+  const totalTaskCount = internAdminTasks.length;
+  const nowTimestamp = Date.now();
+  const trackedProgressTasks = internAdminTasks.map((task) => {
+    const deadlineTime = task.deadline ? new Date(task.deadline).getTime() : NaN;
+    const isOverdue = !task.completed && Number.isFinite(deadlineTime) && deadlineTime < nowTimestamp;
+    const isDueSoon =
+      !task.completed &&
+      Number.isFinite(deadlineTime) &&
+      deadlineTime >= nowTimestamp &&
+      deadlineTime - nowTimestamp <= 1000 * 60 * 60 * 24 * 3;
+
+    const status = task.completed ? 'Completed' : isOverdue ? 'Overdue' : isDueSoon ? 'Due Soon' : 'In Progress';
+
+    return {
+      ...task,
+      status,
+    };
+  });
+  const filteredProgressTasks = trackedProgressTasks.filter((task) =>
+    (task.title || '').toLowerCase().includes(taskSearchTerm.trim().toLowerCase())
+  );
+  const overdueTaskCount = trackedProgressTasks.filter((task) => task.status === 'Overdue').length;
+  const dueSoonTaskCount = trackedProgressTasks.filter((task) => task.status === 'Due Soon').length;
+  const inProgressTaskCount = trackedProgressTasks.filter((task) => task.status === 'In Progress').length;
+  const completionFromTasks = totalTaskCount > 0 ? Math.round((completedTaskCount / totalTaskCount) * 100) : 0;
+  const progressCompletionValue = Math.max(0, Math.min(100, Number(profile?.completion ?? completionFromTasks)));
+  const progressEfficiencyValue = Math.max(0, Math.min(100, Number(profile?.efficiency ?? 0)));
 
   return (
     <div className={`min-h-screen flex font-sans transition-colors ${darkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-[#1a1a1a]'}`}>
@@ -240,20 +351,21 @@ const User: React.FC = () => {
       <aside className={`${isSidebarCollapsed ? 'w-72 lg:w-24' : 'w-72 lg:w-64'} border-r flex flex-col p-6 pb-24 lg:pb-6 fixed h-[100dvh] overflow-y-auto z-20 transition-all duration-300 transform ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-emerald-100'}`}>
         <div className={`mb-12 ${isSidebarCollapsed ? 'space-y-3' : ''}`}>
           <div className={`flex items-center ${isSidebarCollapsed ? 'flex-col gap-3' : 'justify-between gap-3'}`}>
-            <div
-              className={`flex items-center cursor-pointer group ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}
+            <button
+              className="cursor-pointer group bg-transparent border-0 p-0"
               onClick={() => setIsProfileOpen(true)}
+              title="Open profile"
             >
-              <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white font-bold group-hover:scale-110 transition-transform">
-                ⚡
-              </div>
+              <img
+                src="https://framerusercontent.com/images/BZSiFYgRc4wDUAuEybhJbZsIBQY.png?width=1519&height=429"
+                alt="Lifewood"
+                className={`${isSidebarCollapsed ? 'h-8 w-8 object-contain' : 'h-8 w-auto max-w-[140px]'}`}
+                referrerPolicy="no-referrer"
+              />
               {!isSidebarCollapsed && (
-                <>
-                  <span className={`font-bold text-xl tracking-tight transition-colors ${darkMode ? 'text-white group-hover:text-emerald-400' : 'group-hover:text-emerald-600'}`}>Lifewood</span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold transition-colors ${darkMode ? 'bg-slate-800 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>User</span>
-                </>
+                <span className={`mt-2 inline-block text-[10px] px-2 py-0.5 rounded uppercase font-bold transition-colors ${darkMode ? 'bg-slate-800 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>User</span>
               )}
-            </div>
+            </button>
 
             <button
               onClick={() => {
@@ -292,7 +404,7 @@ const User: React.FC = () => {
                         setIsMobileSidebarOpen(false);
                       }
                     }}
-                    className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'text-left'} px-4 py-3 rounded-xl transition-all ${
+                    className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'text-left'} px-4 py-3 rounded-xl transition-all duration-150 ease-out transform-gpu hover:scale-[1.03] active:scale-[1.01] ${
                       activeSection === item.label
                         ? darkMode
                           ? 'bg-slate-800 text-emerald-400 border-r-4 border-emerald-400'
@@ -329,7 +441,7 @@ const User: React.FC = () => {
                         setIsMobileSidebarOpen(false);
                       }
                     }}
-                    className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'text-left'} px-4 py-3 rounded-xl transition-all ${
+                    className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'text-left'} px-4 py-3 rounded-xl transition-all duration-150 ease-out transform-gpu hover:scale-[1.03] active:scale-[1.01] ${
                       activeSection === item.label
                         ? darkMode
                           ? 'bg-slate-800 text-emerald-400 border-r-4 border-emerald-400'
@@ -353,9 +465,9 @@ const User: React.FC = () => {
 
         {/* User Profile */}
         <div className={`mt-auto pt-6 border-t ${darkMode ? 'border-slate-800' : 'border-emerald-100'}`}>
-          <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} p-3 rounded-2xl ${darkMode ? 'bg-slate-800/50' : 'bg-emerald-50/50'}`}>
+          <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between gap-2'} p-3 rounded-2xl ${darkMode ? 'bg-slate-800/50' : 'bg-emerald-50/50'}`}>
             <div
-              className={`flex items-center cursor-pointer group ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}
+              className={`flex items-center cursor-pointer group ${isSidebarCollapsed ? 'justify-center' : 'gap-3 min-w-0 flex-1'}`}
               onClick={() => setIsProfileOpen(true)}
             >
               <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold group-hover:scale-110 transition-transform">
@@ -370,7 +482,7 @@ const User: React.FC = () => {
                 )}
               </div>
               {!isSidebarCollapsed && (
-                <div className="overflow-hidden">
+                <div className="min-w-0 overflow-hidden">
                   <p className={`text-sm font-bold truncate transition-colors ${darkMode ? 'text-slate-100 group-hover:text-emerald-400' : 'group-hover:text-emerald-600'}`}>{profile?.full_name || user.email?.split('@')[0] || 'User'}</p>
                   <p className={`text-[10px] ${darkMode ? 'text-slate-500' : 'text-emerald-600/60'}`}>{profile?.role || 'User'}</p>
                 </div>
@@ -379,7 +491,7 @@ const User: React.FC = () => {
             {!isSidebarCollapsed && (
               <button
                 onClick={handleSignOut}
-                className={`transition-colors ${darkMode ? 'text-slate-500 hover:text-emerald-400' : 'text-gray-400 hover:text-emerald-600'}`}
+                className={`ml-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md transition-colors ${darkMode ? 'text-slate-500 hover:bg-slate-700/60 hover:text-emerald-400' : 'text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'}`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
               </button>
@@ -471,7 +583,7 @@ const User: React.FC = () => {
           <>
         {/* Hero Section */}
         <section
-          className={`relative rounded-[32px] lg:rounded-[40px] p-6 sm:p-8 lg:p-12 text-white overflow-hidden mb-6 lg:mb-8 min-h-[420px] lg:min-h-[450px] flex flex-col justify-between shadow-xl transition-all ${shouldShowHolidayFrameBackground ? 'bg-[#1a2e1a] shadow-emerald-900/20' : darkMode ? 'bg-slate-800 shadow-emerald-900/10' : 'bg-[#1a2e1a] shadow-emerald-900/20'}`}
+          className="relative rounded-[32px] lg:rounded-[40px] p-6 sm:p-8 lg:p-12 text-white overflow-hidden mb-6 lg:mb-8 min-h-[420px] lg:min-h-[450px] flex flex-col justify-between shadow-xl transition-all bg-[#1a2e1a] shadow-emerald-900/20"
           style={
             shouldShowHolidayFrameBackground
               ? {
@@ -711,7 +823,7 @@ const User: React.FC = () => {
             <div className="flex justify-between items-center mb-8">
               <div>
                 <h3 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>All Task</h3>
-                <p className={`text-xs ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Static task list</p>
+                <p className={`text-xs ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Synced from Admin Task</p>
               </div>
               <div className="flex items-center gap-3">
                 <div className="relative w-10 h-10 group hover:w-56 focus-within:w-56 transition-all duration-300 overflow-hidden">
@@ -737,17 +849,20 @@ const User: React.FC = () => {
 
             <div className="space-y-4">
               {filteredTasks.length > 0 ? (
-                filteredTasks.map((task) => (
+                filteredTasks.map((task, index) => (
                   <div
                     key={task.id}
                     className={`p-4 rounded-2xl border flex items-center justify-between transition-colors ${darkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-gray-50 border-gray-200'}`}
                   >
                     <div className="flex items-center gap-3">
                       <div className={`w-3 h-3 rounded-full ${task.completed ? 'bg-emerald-500' : darkMode ? 'bg-slate-600' : 'bg-gray-300'}`}></div>
-                      <p className={`text-sm font-medium ${darkMode ? 'text-slate-200' : 'text-gray-800'}`}>{task.title}</p>
+                      <p className={`text-sm font-medium ${darkMode ? 'text-slate-200' : 'text-gray-800'}`}>
+                        {task.title?.trim() || `Module ${index + 1}`}
+                      </p>
                     </div>
                     <button
                       type="button"
+                      onClick={() => setSelectedAdminTask(task)}
                       className="text-sm font-semibold text-emerald-600 hover:text-emerald-500 transition-colors"
                     >
                       View
@@ -756,7 +871,7 @@ const User: React.FC = () => {
                 ))
               ) : (
                 <div className={`p-4 rounded-2xl text-center text-sm ${darkMode ? 'bg-slate-900/40 text-slate-500 border border-slate-700' : 'bg-gray-50 text-gray-500 border border-gray-200'}`}>
-                  No task matched your search.
+                  {internAdminTasks.length === 0 ? 'No task from Admin yet.' : 'No task matched your search.'}
                 </div>
               )}
             </div>
@@ -803,6 +918,134 @@ const User: React.FC = () => {
           </div>
         </div>
           </>
+        ) : activeSection === 'My Progress' ? (
+          <section className="space-y-6">
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+              <div className={`xl:col-span-4 rounded-[32px] border p-6 shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Progress Snapshot</p>
+                <h3 className={`mt-2 text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>My Learning Track</h3>
+                <div className="mt-6 flex items-center justify-center">
+                  <div
+                    className="relative h-36 w-36 rounded-full"
+                    style={{
+                      background: `conic-gradient(#046241 ${progressCompletionValue * 3.6}deg, ${darkMode ? '#334155' : '#e5e7eb'} 0deg)`,
+                    }}
+                  >
+                    <div className={`absolute inset-[11px] rounded-full flex flex-col items-center justify-center ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                      <span className={`text-3xl font-black ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{progressCompletionValue}%</span>
+                      <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Completed</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-6 grid grid-cols-2 gap-3">
+                  <div className={`rounded-2xl p-3 border ${darkMode ? 'border-slate-700 bg-slate-900/60' : 'border-black/10 bg-gray-50'}`}>
+                    <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Efficiency</p>
+                    <p className={`mt-1 text-xl font-bold ${darkMode ? 'text-[#7fdb9f]' : 'text-[#046241]'}`}>{progressEfficiencyValue}%</p>
+                  </div>
+                  <div className={`rounded-2xl p-3 border ${darkMode ? 'border-slate-700 bg-slate-900/60' : 'border-black/10 bg-gray-50'}`}>
+                    <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Hours</p>
+                    <p className={`mt-1 text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{Number(profile?.hours_spent || 0)}h</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className={`xl:col-span-8 rounded-[32px] border p-6 shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Task Tracking</p>
+                <h3 className={`mt-2 text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Status Board</h3>
+                <div className="mt-6 space-y-4">
+                  {[
+                    { label: 'Completed', value: completedTaskCount, color: '#046241' },
+                    { label: 'In Progress', value: inProgressTaskCount, color: '#2f855a' },
+                    { label: 'Due Soon', value: dueSoonTaskCount, color: '#FFB347' },
+                    { label: 'Overdue', value: overdueTaskCount, color: '#ef4444' },
+                  ].map((item) => {
+                    const width = totalTaskCount > 0 ? Math.max(6, Math.round((item.value / totalTaskCount) * 100)) : 0;
+                    return (
+                      <div key={`progress-board-${item.label}`} className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <p className={`text-xs font-semibold ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>{item.label}</p>
+                          <p className={`text-xs font-bold ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{item.value}</p>
+                        </div>
+                        <div className={`h-2.5 rounded-full overflow-hidden ${darkMode ? 'bg-slate-700' : 'bg-gray-100'}`}>
+                          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${width}%`, backgroundColor: item.color }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className={`rounded-[32px] border p-6 shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                <div>
+                  <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>All Task</h3>
+                  <p className={`text-xs ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Track your modules and open full details.</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="relative w-10 h-10 group hover:w-56 focus-within:w-56 transition-all duration-300 overflow-hidden">
+                    <div className={`pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 ${darkMode ? 'text-slate-400' : 'text-gray-400'}`}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="m21 21-4.3-4.3"></path>
+                      </svg>
+                    </div>
+                    <input
+                      type="text"
+                      value={taskSearchTerm}
+                      onChange={(e) => setTaskSearchTerm(e.target.value)}
+                      placeholder="Search module..."
+                      className={`w-full h-full pl-10 pr-4 py-2 border rounded-xl text-sm focus:outline-none transition-all duration-300 opacity-0 group-hover:opacity-100 focus:opacity-100 ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder:text-slate-400 focus:border-[#046241]' : 'bg-gray-50 border-[#046241]/30 text-gray-900 placeholder:text-gray-400 focus:border-[#046241]'}`}
+                    />
+                  </div>
+                  <p className={`text-xs font-semibold ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>
+                    {completedTaskCount}/{totalTaskCount} Completed
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {filteredProgressTasks.length > 0 ? (
+                  filteredProgressTasks.map((task, index) => (
+                    <div
+                      key={`progress-task-${task.id}`}
+                      className={`p-4 rounded-2xl border flex items-center justify-between transition-colors ${darkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-gray-50 border-gray-200'}`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={`w-3 h-3 rounded-full ${
+                            task.status === 'Completed'
+                              ? 'bg-[#046241]'
+                              : task.status === 'Due Soon'
+                                ? 'bg-[#FFB347]'
+                                : task.status === 'Overdue'
+                                  ? 'bg-red-500'
+                                  : darkMode
+                                    ? 'bg-slate-500'
+                                    : 'bg-gray-300'
+                          }`}
+                        />
+                        <p className={`text-sm font-medium truncate ${darkMode ? 'text-slate-200' : 'text-gray-800'}`}>
+                          {task.title?.trim() || `Module ${index + 1}`}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAdminTask(task)}
+                        className="text-sm font-semibold text-emerald-600 hover:text-emerald-500 transition-colors"
+                      >
+                        View
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className={`p-4 rounded-2xl text-center text-sm ${darkMode ? 'bg-slate-900/40 text-slate-500 border border-slate-700' : 'bg-gray-50 text-gray-500 border border-gray-200'}`}>
+                    {trackedProgressTasks.length === 0 ? 'No task from Admin yet.' : 'No task matched your search.'}
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
         ) : (
           <section className={`relative rounded-[32px] lg:rounded-[40px] p-6 sm:p-8 lg:p-12 overflow-hidden min-h-[420px] lg:min-h-[520px] border shadow-xl ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
             <div className="pointer-events-none absolute inset-0 opacity-40">
@@ -820,6 +1063,65 @@ const User: React.FC = () => {
       </main>
 
       <AnimatePresence>
+        {selectedAdminTask && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60"
+              onClick={() => setSelectedAdminTask(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              className={`relative w-full max-w-lg rounded-3xl border p-6 shadow-2xl ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-black/10'}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Task Information</p>
+                  <h3 className={`mt-1 text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                    {selectedAdminTask.title || 'Module'}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAdminTask(null)}
+                  className={`w-8 h-8 rounded-lg border flex items-center justify-center ${darkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-gray-200 text-gray-500 hover:bg-gray-100'}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              </div>
+
+              <div className="mt-5 space-y-3">
+                <div>
+                  <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Type</p>
+                  <p className={`mt-1 text-sm font-medium ${darkMode ? 'text-slate-200' : 'text-gray-800'}`}>{selectedAdminTask.entryType || 'Task'}</p>
+                </div>
+                <div>
+                  <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Description</p>
+                  <p className={`mt-1 text-sm ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>
+                    {selectedAdminTask.description || 'No description provided.'}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Started</p>
+                    <p className={`mt-1 text-sm ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>
+                      {formatTaskDate(selectedAdminTask.startedAt || selectedAdminTask.createdAt)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Deadline</p>
+                    <p className={`mt-1 text-sm ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>{formatTaskDate(selectedAdminTask.deadline)}</p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {isProfileOpen && (
           <ProfileSidebar 
             isOpen={isProfileOpen} 

@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
-import { motion } from 'motion/react';
+import React, { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import ChromaGrid, { type ChromaGridItem } from './ChromaGrid';
 
 const DraggableImage: React.FC<{ 
   src: string; 
@@ -45,6 +46,113 @@ const DraggableImage: React.FC<{
 
 const AboutPage: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const projectManagerTitle = 'Project Manager';
+  const projectManagerFramePhoto =
+    'https://img.freepik.com/premium-photo/portrait-happy-businesswoman-with-arms-crossed-mockup-confidence-job-digital-agency-advisor-professional-female-tech-startup-project-manager-office-space-with-smile-face_590464-265295.jpg?semt=ais_hybrid&w=740&q=80';
+  const twinkyProfilePhoto =
+    'https://scontent.fceb2-2.fna.fbcdn.net/v/t39.30808-6/636733726_122231530088358365_7562308527376456388_n.jpg?stp=dst-jpg_p526x296_tt6&_nc_cat=102&ccb=1-7&_nc_sid=1d70fc&_nc_eui2=AeExUir2oZHU1qcHKsssk3hgH_9MxSRAN34f_0zFJEA3fhKOwZm6AlGESa_A83OeMxyFVUBjhTN7nKYPgLxXKXWl&_nc_ohc=rbOL0ULR9pUQ7kNvwGOEUh9&_nc_oc=AdqirsWF3eVRzuP1Nrdz4nna11fZhJI73hy5xWJ6_ulFSYkf3dAES0-3iVBxCkfWgjw&_nc_zt=23&_nc_ht=scontent.fceb2-2.fna&_nc_gid=l65EphYdGtB9pf4K4fPIBg&_nc_ss=7a32e&oh=00_AfxZco71PsVMyDuZ4dBhl0FSfqz7aVe3GdSrGPwMBGuUlw&oe=69C53A8A';
+  const projectManagerContact = 'https://web.facebook.com/twnky.casidsid.2024';
+  const teamRoleItems: (ChromaGridItem & {
+    backgroundImage: string;
+  })[] = [
+    {
+      title: 'Project Manager',
+      borderColor: '#4a5d23',
+      gradient: 'linear-gradient(160deg, #f8f8f3, #edf3e2)',
+      image: projectManagerFramePhoto,
+      hideImage: false,
+      backgroundImage: projectManagerFramePhoto,
+    },
+    {
+      title: 'Hackger',
+      borderColor: '#1d4d40',
+      gradient: 'linear-gradient(160deg, #f7faf3, #e8f1e6)',
+      hideImage: true,
+      backgroundImage:
+        'https://images.unsplash.com/photo-1555949963-aa79dcee981c?auto=format&fit=crop&w=1600&q=80'
+    },
+    {
+      title: 'Designer',
+      borderColor: '#ffb347',
+      gradient: 'linear-gradient(160deg, #fffaf2, #f9efe2)',
+      hideImage: true,
+      backgroundImage:
+        'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1600&q=80'
+    },
+    {
+      title: 'Hustler',
+      borderColor: '#0e2a1e',
+      gradient: 'linear-gradient(160deg, #f5f8f6, #e3ece5)',
+      hideImage: true,
+      backgroundImage:
+        'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1600&q=80'
+    },
+    {
+      title: 'Tester',
+      borderColor: '#2f6a5a',
+      gradient: 'linear-gradient(160deg, #f6faf8, #e8f2ec)',
+      hideImage: true,
+      backgroundImage:
+        'https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=1600&q=80'
+    }
+  ];
+  const [selectedRoleIndex, setSelectedRoleIndex] = useState<number | null>(null);
+  const [projectManagerExpanded, setProjectManagerExpanded] = useState(false);
+  const projectManagerResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const defaultSectionBackground =
+    'https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=2200&auto=format&fit=crop';
+  const visibleRoleItems = projectManagerExpanded
+    ? teamRoleItems.filter((role) => role.title !== projectManagerTitle)
+    : teamRoleItems;
+
+  const clearProjectManagerResetTimer = () => {
+    if (projectManagerResetTimerRef.current) {
+      clearTimeout(projectManagerResetTimerRef.current);
+      projectManagerResetTimerRef.current = null;
+    }
+  };
+
+  const resetToDefaultSecondSection = () => {
+    setProjectManagerExpanded(false);
+    setSelectedRoleIndex(null);
+    clearProjectManagerResetTimer();
+  };
+
+  const startProjectManagerResetTimer = () => {
+    clearProjectManagerResetTimer();
+    projectManagerResetTimerRef.current = setTimeout(() => {
+      resetToDefaultSecondSection();
+    }, 5000);
+  };
+
+  const handleRoleClick = (item: ChromaGridItem) => {
+    const clickedIndex = teamRoleItems.findIndex((role) => role.title === item.title);
+    if (clickedIndex < 0) {
+      return;
+    }
+    setSelectedRoleIndex(clickedIndex);
+    if (item.title === projectManagerTitle) {
+      setProjectManagerExpanded(true);
+      startProjectManagerResetTimer();
+      return;
+    }
+    setProjectManagerExpanded(false);
+    clearProjectManagerResetTimer();
+  };
+
+  useEffect(() => {
+    return () => {
+      clearProjectManagerResetTimer();
+    };
+  }, []);
+
+  const sectionBackgroundImage =
+    projectManagerExpanded
+      ? projectManagerFramePhoto
+      : selectedRoleIndex === null || teamRoleItems[selectedRoleIndex]?.title === projectManagerTitle
+      ? defaultSectionBackground
+      : (teamRoleItems[selectedRoleIndex]?.backgroundImage ?? defaultSectionBackground);
+
   return (
     <section className="relative min-h-screen bg-white pt-40 pb-20 px-8 md:px-20 z-10">
       <div className="max-w-7xl mx-auto">
@@ -102,6 +210,96 @@ const AboutPage: React.FC = () => {
             <h3 className="text-3xl md:text-4xl font-bold text-[#4a5d23] mt-4">
               Lets collaborate
             </h3>
+          </div>
+        </div>
+
+        {/* Team Frames Section */}
+        <div
+          className="mt-24 rounded-[2.5rem] overflow-hidden relative min-h-[620px] md:min-h-[720px] lg:min-h-[760px] flex items-end"
+          onClickCapture={() => {
+            if (projectManagerExpanded) {
+              startProjectManagerResetTimer();
+            }
+          }}
+        >
+          <div className="absolute inset-0 overflow-hidden">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={`${sectionBackgroundImage}-${projectManagerExpanded ? 'expanded' : 'base'}`}
+                className="absolute inset-0"
+                initial={{ scale: 1.14, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{
+                  duration: 1.2,
+                  ease: [0.22, 1, 0.36, 1]
+                }}
+                style={{
+                  backgroundImage: `url(${sectionBackgroundImage})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center'
+                }}
+              />
+            </AnimatePresence>
+          </div>
+          <motion.div
+            className="absolute inset-0"
+            animate={{
+              backgroundColor: projectManagerExpanded ? 'rgba(4, 16, 18, 0.62)' : 'rgba(0, 0, 0, 0.55)'
+            }}
+            transition={{ duration: 0.85, ease: 'easeInOut' }}
+          />
+          <div className="relative z-10 w-full h-full px-6 pb-8 pt-20 md:px-10 md:pb-10 md:pt-24 lg:px-16 lg:pb-14 lg:pt-20 flex flex-col justify-between">
+            {projectManagerExpanded && (
+              <motion.div
+                className="max-w-2xl"
+                initial={{ opacity: 0, x: -90 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 1.05, ease: [0.16, 1, 0.3, 1] }}
+              >
+                <p className="text-xs md:text-sm uppercase tracking-[0.35em] text-[#ffd28a] font-semibold mb-4">
+                  Project Manager
+                </p>
+                <h2 className="text-4xl md:text-6xl lg:text-7xl font-black text-white leading-[0.9]">
+                  TWINKY CASIDSID
+                </h2>
+                <p className="mt-5 text-white/95 text-base md:text-lg leading-relaxed max-w-xl">
+                  She is the Project Manager of Wisenergy, leading planning, delivery timelines, and team coordination across each milestone.
+                  She keeps cross-functional work aligned, manages risks early, and ensures Wisenergy releases are delivered with consistent quality.
+                </p>
+                <div className="mt-7 flex items-center gap-5">
+                  <div className="w-24 h-24 md:w-28 md:h-28 rounded-full border-4 border-white/80 overflow-hidden shadow-2xl bg-white/10">
+                    <img
+                      src={twinkyProfilePhoto}
+                      alt="Twinky Casidsid profile"
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                  <a
+                    href={projectManagerContact}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-white text-sm md:text-base font-semibold underline underline-offset-4 hover:text-[#ffd28a] transition-colors"
+                  >
+                    Contact: {projectManagerContact}
+                  </a>
+                </div>
+              </motion.div>
+            )}
+            <div className="w-full max-w-7xl mx-auto">
+              <ChromaGrid
+                items={visibleRoleItems}
+                className="about-team-grid"
+                columns={projectManagerExpanded ? 4 : 5}
+                rows={1}
+                radius={220}
+                damping={0.35}
+                fadeOut={0.5}
+                activeIndex={!projectManagerExpanded ? (selectedRoleIndex ?? undefined) : undefined}
+                onItemClick={handleRoleClick}
+              />
+            </div>
           </div>
         </div>
 

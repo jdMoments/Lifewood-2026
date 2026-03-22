@@ -1,0 +1,154 @@
+.chroma-grid {
+  --x: 50%;
+  --y: 50%;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+.chroma-card-shell {
+  border-radius: 1.5rem;
+  transition: transform 0.3s ease;
+}
+
+.chroma-card-shell:hover {
+  transform: translateY(-4px);
+}
+
+.chroma-card-shell.is-active .chroma-card {
+  box-shadow: 0 0 0 2px rgba(255, 179, 71, 0.65), 0 12px 28px rgba(14, 42, 30, 0.22);
+}
+
+.about-team-grid .chroma-card-shell {
+  aspect-ratio: 3 / 4;
+  min-width: 0;
+}
+
+.chroma-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: calc(1.5rem - 1px);
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--card-border);
+  background:
+    radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.55), transparent 45%),
+    var(--card-gradient);
+}
+
+.about-team-grid .chroma-card {
+  height: 100%;
+  min-height: 340px;
+  border-radius: calc(1.5rem - 1px);
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.28);
+}
+
+.chroma-img-wrapper {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 220px;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(14, 42, 30, 0.12);
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 179, 71, 0.2), transparent 45%),
+    linear-gradient(160deg, #fef9ef 0%, #f6f8f0 100%);
+}
+
+.about-team-grid .chroma-img-wrapper {
+  min-height: 0;
+  border-bottom: 2px solid rgba(14, 42, 30, 0.18);
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 179, 71, 0.25), transparent 45%),
+    linear-gradient(160deg, #fdf8ec 0%, #eef4e8 100%);
+}
+
+.chroma-img-wrapper img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chroma-empty-frame {
+  position: absolute;
+  inset: 1rem;
+  border-radius: 1rem;
+  border: 2px dashed rgba(74, 93, 35, 0.35);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.chroma-info {
+  min-height: 90px;
+  padding: 1rem 0.95rem 1.05rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid rgba(14, 42, 30, 0.12);
+  background: #efefe4;
+}
+
+.chroma-info .chroma-name {
+  margin: 0;
+  text-align: center;
+  font-weight: 700;
+  font-size: clamp(0.98rem, 1.1vw, 1.16rem) !important;
+  line-height: 1.2 !important;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: #0e2a1e;
+  letter-spacing: 0.005em;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+@media (max-width: 1200px) {
+  .about-team-grid .chroma-card {
+    min-height: 300px;
+  }
+}
+
+.handle,
+.role,
+.location {
+  display: none;
+}
+
+.chroma-overlay {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: radial-gradient(
+    circle var(--r, 300px) at var(--x) var(--y),
+    rgba(255, 179, 71, 0.14),
+    transparent 70%
+  );
+}
+
+.chroma-fade {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.15), transparent 35%);
+}
+
+@media (max-width: 1200px) {
+  .chroma-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .chroma-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .chroma-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -13,7 +13,7 @@ const LIFEWOOD_OVERVIEW_RESPONSE =
 const WEBSITE_KNOWLEDGE = `
 Public/webpage scope:
 - Public homepage content and general company information.
-- Public navigation links and related information such as AI Initiatives, Philanthropy, and Careers.
+- Public navigation links and related information such as AI Initiatives, Philanthropy, Careers, and Internal News.
 - Lifewood services and company details visible from public pages.
 `;
 
@@ -44,6 +44,46 @@ Admin dashboard scope:
 - Role-based management, user evaluations, reports/analytics, and admin controls.
 - Admin-only dashboard navigation and management frames.
 `;
+
+const ADMIN_EMAIL = 'damayojholmer@gmail.com';
+
+const PUBLIC_SCOPE_FILES = [
+  'components/HomePage.tsx',
+  'components/Navbar.tsx',
+  'components/Hero.tsx',
+  'components/Ticker.tsx',
+  'components/About.tsx',
+  'components/Stats.tsx',
+  'components/Clients.tsx',
+  'components/Innovation.tsx',
+  'components/AIDataServices.tsx',
+  'components/VisionMission.tsx',
+  'components/CTA.tsx',
+  'components/Footer.tsx',
+  'components/ContactUs.tsx',
+  'components/CareersPage.tsx',
+  'components/InternalNews.tsx',
+  'components/AIServicesPage.tsx',
+  'components/AIProjects.tsx',
+  'components/PhiPact.tsx',
+  'components/AboutPage.tsx',
+  'components/OfficesPage.tsx',
+  'content.ts',
+  'constants.ts',
+] as const;
+
+const PUBLIC_ROUTE_TO_FILE: Record<string, string> = {
+  '/': 'components/HomePage.tsx',
+  '/innovation': 'components/HomePage.tsx',
+  '/careers': 'components/CareersPage.tsx',
+  '/internal-news': 'components/InternalNews.tsx',
+  '/aiservices': 'components/AIServicesPage.tsx',
+  '/aiprojects': 'components/AIProjects.tsx',
+  '/about': 'components/AboutPage.tsx',
+  '/offices': 'components/OfficesPage.tsx',
+  '/phipact': 'components/PhiPact.tsx',
+  '/contact': 'components/ContactUs.tsx',
+};
 
 const readFileSafely = (relativePath: string) => {
   try {
@@ -110,19 +150,48 @@ const buildScopedKnowledgeFromFiles = (
 type ChatScope = 'public' | 'user' | 'employees' | 'admin';
 type ChatUserContext = { id?: string; email?: string; fullName?: string; role?: string };
 
-const getScopeSourceFiles = (scope: ChatScope) => {
+const normalizeRoutePath = (routePath: string) => {
+  const trimmed = (routePath || '/').trim();
+  if (!trimmed) return '/';
+
+  let normalized = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  normalized = normalized.split('?')[0].split('#')[0].trim().toLowerCase();
+
+  if (normalized.length > 1 && normalized.endsWith('/')) {
+    normalized = normalized.slice(0, -1);
+  }
+
+  return normalized || '/';
+};
+
+const resolveScopeFromRouteAndContext = (
+  routePath: string,
+  userContext: ChatUserContext,
+  fallbackScope: ChatScope = 'public'
+): ChatScope => {
+  const normalizedRoute = normalizeRoutePath(routePath);
+  const isDashboardRoute =
+    normalizedRoute === '/admin' || normalizedRoute === '/user' || normalizedRoute === '/employees';
+
+  if (!isDashboardRoute) return 'public';
+
+  const normalizedRole = (userContext.role || '').trim().toLowerCase();
+  const normalizedEmail = (userContext.email || '').trim().toLowerCase();
+  const hasAuthIdentity = Boolean((userContext.id || '').trim() || normalizedEmail);
+  if (!hasAuthIdentity) return 'public';
+
+  if (normalizedRole === 'admin' || normalizedEmail === ADMIN_EMAIL) return 'admin';
+  if (normalizedRole === 'employee') return 'employees';
+  if (normalizedRole === 'user' || normalizedRole === 'intern') return 'user';
+  return fallbackScope === 'admin' || fallbackScope === 'employees' ? fallbackScope : 'user';
+};
+
+const getScopeSourceFiles = (scope: ChatScope, routePath: string) => {
   if (scope === 'public') {
-    return [
-      'components/HomePage.tsx',
-      'components/Hero.tsx',
-      'components/About.tsx',
-      'components/Stats.tsx',
-      'components/AIDataServices.tsx',
-      'components/Clients.tsx',
-      'components/VisionMission.tsx',
-      'components/CTA.tsx',
-      'components/ContactUs.tsx',
-    ];
+    const normalizedRoute = normalizeRoutePath(routePath);
+    const routeSpecificFile = PUBLIC_ROUTE_TO_FILE[normalizedRoute] || '';
+    const ordered = routeSpecificFile ? [routeSpecificFile, ...PUBLIC_SCOPE_FILES] : [...PUBLIC_SCOPE_FILES];
+    return Array.from(new Set(ordered));
   }
   if (scope === 'user') return ['components/User.tsx'];
   if (scope === 'employees') return ['components/Employees.tsx'];
@@ -136,7 +205,7 @@ const getBaseScopeKnowledge = (scope: ChatScope) => {
   return ADMIN_DASHBOARD_KNOWLEDGE;
 };
 
-const getScopeKnowledgeFromFiles = (scope: ChatScope) => {
+const getScopeKnowledgeFromFiles = (scope: ChatScope, routePath: string) => {
   const scopeLabelMap: Record<typeof scope, string> = {
     public: 'Public Website',
     user: 'User Dashboard',
@@ -147,7 +216,7 @@ const getScopeKnowledgeFromFiles = (scope: ChatScope) => {
   return buildScopedKnowledgeFromFiles(
     scopeLabelMap[scope],
     getBaseScopeKnowledge(scope),
-    getScopeSourceFiles(scope),
+    getScopeSourceFiles(scope, routePath),
     charLimit
   );
 };
@@ -232,12 +301,12 @@ const parseHolidayEntriesFromSource = (source: string): ParsedHoliday[] => {
   return holidays;
 };
 
-const getTodayScopeContext = (scope: ChatScope) => {
+const getTodayScopeContext = (scope: ChatScope, routePath: string) => {
   const now = new Date();
   const todayDay = now.getDate();
   const todayMonth = now.getMonth();
   const humanDate = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-  const pageFiles = getScopeSourceFiles(scope);
+  const pageFiles = getScopeSourceFiles(scope, routePath);
   const primaryScopeFile = pageFiles[0] || '';
   const scopeSource = primaryScopeFile ? readFileSafely(primaryScopeFile) : '';
   const holidays = parseHolidayEntriesFromSource(scopeSource);
@@ -261,8 +330,9 @@ const buildChatSystemInstruction = (scope: ChatScope, routePath: string, userCon
     admin: 'Admin Dashboard',
   };
 
-  const scopedKnowledge = getScopeKnowledgeFromFiles(scope);
-  const todayScopeContext = getTodayScopeContext(scope);
+  const normalizedRoute = normalizeRoutePath(routePath);
+  const scopedKnowledge = getScopeKnowledgeFromFiles(scope, normalizedRoute);
+  const todayScopeContext = getTodayScopeContext(scope, normalizedRoute);
   const userContextSummary =
     scope === 'public'
       ? 'No authenticated user context in public scope.'
@@ -273,7 +343,7 @@ const buildChatSystemInstruction = (scope: ChatScope, routePath: string, userCon
   return `Role:
 You are the Lifewood Intelligent Assistant. Your goal is to provide clear, accurate, and professional information based strictly on the content of the Lifewood platform.
 
-Current scope: ${scopeLabelMap[scope]} (route: ${routePath}).
+Current scope: ${scopeLabelMap[scope]} (route: ${normalizedRoute}).
 
 Tone and Persona:
 - Smart and Analytical: provide insightful and concise answers.
@@ -286,11 +356,16 @@ Contextual Knowledge Boundaries:
 - Employee/Admin View: if the user is Admin or Employee, your scope includes internal documentation, administrative controls, and employee-specific content relevant to their view.
 
 Constraint Rules:
-- Lifewood Focus: answer only questions related to Lifewood, its services, its content, and the specific page the user is currently viewing.
+- Lifewood Focus: answer only questions related to Lifewood, its services, and content available inside the currently active scope.
+- Scope access:
+  - If scope is Public Website, you may answer from all public website content (homepage sections, Careers, Internal News, AI Initiatives, Philanthropy, and related public pages).
+  - If scope is User Dashboard, answer only from user dashboard content.
+  - If scope is Employees Dashboard, answer only from employees dashboard content.
+  - If scope is Admin Dashboard, answer only from admin dashboard content.
 - If a question is unrelated to Lifewood (for example world news, unrelated coding, or personal advice), return exactly:
 ${OFF_TOPIC_RESPONSE}
 - If a question is Lifewood-related but outside the currently active scope, respond with:
-"I can only assist with Lifewood information relevant to your current view and access level. Please ask about the content available on this page."
+"I can only assist with Lifewood information relevant to your current view and access level. Please ask about the content available in your current area."
 - Personal simple support: you may answer simple personal day-to-day concerns in a brief helpful way.
 - Unrelated technical topics (for example bubble sort, generic coding problems, or non-Lifewood programming help) are out of scope and must use the exact OFF_TOPIC_RESPONSE above.
 - If the user asks about their own name and authenticated user context is available, answer using that user context only.
@@ -354,7 +429,7 @@ const createAiProxyPlugin = (env: Record<string, string>) => {
       const scopeRaw = typeof body?.scope === 'string' ? body.scope.trim().toLowerCase() : 'public';
       const routePath = typeof body?.routePath === 'string' ? body.routePath.trim() : '/';
       const allowedScopes = new Set(['public', 'user', 'employees', 'admin']);
-      const scope = (allowedScopes.has(scopeRaw) ? scopeRaw : 'public') as ChatScope;
+      const fallbackScope = (allowedScopes.has(scopeRaw) ? scopeRaw : 'public') as ChatScope;
       const userContextRaw = body?.userContext;
       const userContext: ChatUserContext =
         userContextRaw && typeof userContextRaw === 'object'
@@ -365,6 +440,8 @@ const createAiProxyPlugin = (env: Record<string, string>) => {
               role: typeof userContextRaw.role === 'string' ? userContextRaw.role : '',
             }
           : {};
+      const scope = resolveScopeFromRouteAndContext(routePath, userContext, fallbackScope);
+      const normalizedRoutePath = normalizeRoutePath(routePath);
 
       if (!message) {
         sendJson(res, 400, { error: 'Message is required' });
@@ -393,7 +470,7 @@ const createAiProxyPlugin = (env: Record<string, string>) => {
       const chat = ai.chats.create({
         model,
         config: {
-          systemInstruction: buildChatSystemInstruction(scope, routePath, userContext),
+          systemInstruction: buildChatSystemInstruction(scope, normalizedRoutePath, userContext),
         },
       });
       const response = await chat.sendMessage({ message });

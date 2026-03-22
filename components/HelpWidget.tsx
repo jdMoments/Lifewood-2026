@@ -9,11 +9,28 @@ interface Message {
 
 const getCurrentRoutePath = () => window.location.hash.substring(1) || '/';
 
-const getChatScopeFromRoute = (routePath: string) => {
-  if (routePath === '/admin') return 'admin';
-  if (routePath === '/employees') return 'employees';
-  if (routePath === '/user') return 'user';
-  return 'public';
+const ADMIN_EMAIL = 'damayojholmer@gmail.com';
+
+const getChatScopeFromRoute = (
+  routePath: string,
+  userRole?: string,
+  userEmail?: string,
+  isAuthenticated?: boolean
+) => {
+  const normalizedRoute = (routePath || '/').trim().toLowerCase();
+  const normalizedRole = (userRole || '').trim().toLowerCase();
+  const normalizedEmail = (userEmail || '').trim().toLowerCase();
+
+  const isDashboardRoute =
+    normalizedRoute === '/admin' || normalizedRoute === '/employees' || normalizedRoute === '/user';
+
+  if (!isDashboardRoute) return 'public';
+  if (!isAuthenticated) return 'public';
+
+  const isAdminUser = normalizedRole === 'admin' || normalizedEmail === ADMIN_EMAIL;
+  if (isAdminUser) return 'admin';
+  if (normalizedRole === 'employee') return 'employees';
+  return 'user';
 };
 
 const HelpWidget: React.FC = () => {
@@ -61,7 +78,7 @@ const HelpWidget: React.FC = () => {
 
     try {
       const routePath = getCurrentRoutePath();
-      const scope = getChatScopeFromRoute(routePath);
+      const scope = getChatScopeFromRoute(routePath, profile?.role, user?.email, Boolean(user));
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {

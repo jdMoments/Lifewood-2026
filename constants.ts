@@ -32,7 +32,14 @@ export const NAV_LINKS = [
   { key: "nav.philanthropy", href: "#/phipact" },
   { key: "nav.careers", href: "#/careers" },
   { key: "nav.contactUs", href: "#/contact" },
-  { key: "nav.internalNews", href: "#/internal-news" },
+  {
+    key: "nav.news",
+    href: "#/internal-news",
+    children: [
+      { key: "nav.internalNews", href: "#/internal-news" },
+      { key: "nav.externalNews", href: "#/external-news" },
+    ],
+  },
 ];
 
 export const TICKER_KEYS = [
@@ -80,7 +87,7 @@ export const CLIENT_LOGOS = [
     { name: "Google", src: "https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg" },
     { name: "Microsoft", src: "https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg" },
     { name: "Amazon", src: "https://upload.wikimedia.org/wikipedia/commons/a/a9/Amazon_logo.svg" },
-    { name: "Meta", src: "https://upload.wikimedia.org/wikipedia/commons/a/ab/Meta-Logo.svg" },
+    { name: "Meta", src: "https://www.figma.com/design/DNmP1SVzyBfojABh8kOKh6/Meta-Logo--Facebook-logo---Community-?node-id=201-2&t=KbkRW6JEaaguQ0VO-0" },
     { name: "Apple", src: "https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg" },
     { name: "OpenAI", src: "https://upload.wikimedia.org/wikipedia/commons/4/4d/OpenAI_Logo.svg" },
     { name: "NVIDIA", src: "https://upload.wikimedia.org/wikipedia/commons/2/21/Nvidia_logo.svg" },

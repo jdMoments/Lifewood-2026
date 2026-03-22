@@ -3,11 +3,44 @@ import { useTranslation } from '../hooks/useTranslation';
 import ScrollFloat from './ScrollFloat';
 import GlareHover from './GlareHover';
 import Particles from './Particles'; // Import the new Particles component
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+
+const PROJECT_SUBMISSION_TABLE_CANDIDATES = ['project_submissions', 'project_submission'] as const;
+
+const isMissingProjectSubmissionTableError = (error: any) => {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return (
+    error?.code === '42P01' ||
+    message.includes('could not find the table') ||
+    message.includes('schema cache') ||
+    message.includes('relation') && message.includes('does not exist')
+  );
+};
+
+const isProjectSubmissionSchemaIssue = (error: any) => {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return error?.code === '42703' || message.includes('column') || message.includes('does not exist');
+};
 
 const AIProjects: React.FC = () => {
   const { t } = useTranslation();
+  const { user, profile } = useAuth();
   const [openIndex, setOpenIndex] = React.useState<number | null>(0);
   const [gradientActive, setGradientActive] = React.useState(false);
+  const [projectUploadFile, setProjectUploadFile] = React.useState<File | null>(null);
+  const [isSubmittingProject, setIsSubmittingProject] = React.useState(false);
+  const [projectSubmitNotice, setProjectSubmitNotice] = React.useState('');
+  const [projectForm, setProjectForm] = React.useState({
+    fullName: '',
+    email: '',
+    contactNumber: '',
+    projectName: '',
+    projectLink: '',
+    resourceLink: '',
+    mainAiNeed: 'Data Collection',
+    description: '',
+  });
   const ideaBoardRows = [
     {
       project: "Voice AI for Rural Banking",
@@ -46,6 +79,145 @@ const AIProjects: React.FC = () => {
     "https://framerusercontent.com/images/RIqv6T7aFrp5Q9X85Zqy55KQ8x4.png?scale-down-to=2048&width=1856&height=2464", // 2.6
     "https://framerusercontent.com/images/ad17haYjwUpqxpqARkBZaMKSqmM.png?scale-down-to=1024&width=1856&height=2464", // 2.7
   ];
+
+  React.useEffect(() => {
+    setProjectForm((prev) => ({
+      ...prev,
+      fullName: prev.fullName || (profile?.full_name || '').toString(),
+      email: prev.email || (user?.email || profile?.email || '').toString(),
+      contactNumber: prev.contactNumber || (profile?.phone || '').toString(),
+    }));
+  }, [profile?.full_name, profile?.email, profile?.phone, user?.email]);
+
+  const handleProjectFormChange = (
+    field: keyof typeof projectForm,
+    value: string
+  ) => {
+    setProjectForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSubmitProject = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const fullName = projectForm.fullName.trim();
+    const email = projectForm.email.trim().toLowerCase();
+    const contactNumber = projectForm.contactNumber.trim();
+    const projectName = projectForm.projectName.trim();
+    const projectLink = projectForm.projectLink.trim();
+    const resourceLink = projectForm.resourceLink.trim();
+    const mainAiNeed = projectForm.mainAiNeed.trim();
+    const description = projectForm.description.trim();
+
+    if (!fullName || !email || !contactNumber || !projectName || !description || !mainAiNeed) {
+      setProjectSubmitNotice('Please complete Full Name, Email, Contact Number, Project Name, Main AI Need, and Description.');
+      return;
+    }
+
+    setIsSubmittingProject(true);
+    setProjectSubmitNotice('');
+
+    const payload = {
+      user_id: user?.id || null,
+      full_name: fullName,
+      email,
+      contact_number: contactNumber,
+      project_name: projectName,
+      description,
+      project_link: projectLink || null,
+      resource_link: resourceLink || null,
+      uploaded_file_name: projectUploadFile?.name || null,
+      main_ai_need: mainAiNeed,
+      status: 'pending',
+    };
+
+    const payloadVariants: Array<Record<string, string | null>> = [
+      payload,
+      {
+        user_id: user?.id || null,
+        full_name: fullName,
+        email,
+        contact_number: contactNumber,
+        project_name: projectName,
+        description,
+        project_link: projectLink || null,
+        resource_link: resourceLink || null,
+        main_ai_need: mainAiNeed,
+        status: 'pending',
+      },
+      {
+        full_name: fullName,
+        email,
+        contact_number: contactNumber,
+        project_name: projectName,
+        description,
+        project_link: projectLink || null,
+        resource_link: resourceLink || null,
+        status: 'pending',
+      },
+    ];
+
+    let error: { code?: string; message: string; details?: string | null } | null = null;
+    let projectSubmissionSaved = false;
+    let usedSubmissionTable: (typeof PROJECT_SUBMISSION_TABLE_CANDIDATES)[number] | null = null;
+
+    for (const submissionTable of PROJECT_SUBMISSION_TABLE_CANDIDATES) {
+      for (const candidatePayload of payloadVariants) {
+        const { error: insertError } = await supabase
+          .from(submissionTable)
+          .insert([candidatePayload]);
+
+        if (!insertError) {
+          projectSubmissionSaved = true;
+          usedSubmissionTable = submissionTable;
+          error = null;
+          break;
+        }
+
+        error = insertError;
+
+        if (isMissingProjectSubmissionTableError(insertError)) {
+          // Try the next candidate table name.
+          break;
+        }
+
+        if (!isProjectSubmissionSchemaIssue(insertError)) {
+          // Non-schema error should stop retries.
+          break;
+        }
+      }
+
+      if (projectSubmissionSaved) break;
+      if (error && !isMissingProjectSubmissionTableError(error)) break;
+    }
+
+    if (error || !projectSubmissionSaved) {
+      console.error('Error submitting project:', error);
+      if (error && isMissingProjectSubmissionTableError(error)) {
+        setProjectSubmitNotice('Project submission table is missing in Supabase. Please run section 4 in supabase_setup.sql.');
+      } else {
+        const safeMessage = error?.message ? ` (${error.message})` : '';
+        setProjectSubmitNotice(`Unable to submit project right now. Please try again.${safeMessage}`);
+      }
+      setIsSubmittingProject(false);
+      return;
+    }
+
+    setProjectForm((prev) => ({
+      ...prev,
+      projectName: '',
+      projectLink: '',
+      resourceLink: '',
+      mainAiNeed: 'Data Collection',
+      description: '',
+    }));
+    setProjectUploadFile(null);
+    if (usedSubmissionTable === 'project_submission') {
+      setProjectSubmitNotice('Project submitted successfully (using legacy project_submission table).');
+    } else {
+      setProjectSubmitNotice('Project submitted successfully.');
+    }
+    setIsSubmittingProject(false);
+  };
 
   return (
     <div className={`relative min-h-screen pt-40 pb-20 px-8 md:px-20 z-10 transition-colors duration-1000 ${gradientActive ? 'bg-gradient-to-br from-yellow-50 via-orange-50 to-green-50' : 'bg-white'}`}>
@@ -219,22 +391,79 @@ const AIProjects: React.FC = () => {
                     <p className="text-sm text-black/60 mt-1">We review submissions and reply with a discovery plan.</p>
                   </div>
 
-                  <form action="#/contact" encType="multipart/form-data" className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <form onSubmit={handleSubmitProject} encType="multipart/form-data" className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <label className="block">
-                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Project Name</span>
-                      <input type="text" placeholder="Example: Smart Ops Assistant" className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Full Name</span>
+                      <input
+                        type="text"
+                        value={projectForm.fullName}
+                        onChange={(e) => handleProjectFormChange('fullName', e.target.value)}
+                        placeholder="Your full name"
+                        className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40"
+                      />
                     </label>
                     <label className="block">
-                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Company / Team</span>
-                      <input type="text" placeholder="Your company or team" className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Project Name</span>
+                      <input
+                        type="text"
+                        value={projectForm.projectName}
+                        onChange={(e) => handleProjectFormChange('projectName', e.target.value)}
+                        placeholder="Example: Smart Ops Assistant"
+                        className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40"
+                      />
+                    </label>
+                    <label className="block md:col-span-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Email</span>
+                      <input
+                        type="email"
+                        value={projectForm.email}
+                        onChange={(e) => handleProjectFormChange('email', e.target.value)}
+                        placeholder="you@gmail.com"
+                        className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Main AI Need</span>
+                      <select
+                        value={projectForm.mainAiNeed}
+                        onChange={(e) => handleProjectFormChange('mainAiNeed', e.target.value)}
+                        className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40"
+                      >
+                        <option>Data Collection</option>
+                        <option>Annotation</option>
+                        <option>NLP / Speech</option>
+                        <option>Computer Vision</option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Contact Number</span>
+                      <input
+                        type="text"
+                        value={projectForm.contactNumber}
+                        onChange={(e) => handleProjectFormChange('contactNumber', e.target.value)}
+                        placeholder="+63..."
+                        className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40"
+                      />
                     </label>
                     <label className="block md:col-span-2">
                       <span className="text-xs font-bold uppercase tracking-wider text-black/60">Project Link (Web / App / Demo)</span>
-                      <input type="url" placeholder="https://yourapp.com" className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40" />
+                      <input
+                        type="url"
+                        value={projectForm.projectLink}
+                        onChange={(e) => handleProjectFormChange('projectLink', e.target.value)}
+                        placeholder="https://yourapp.com"
+                        className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40"
+                      />
                     </label>
                     <label className="block md:col-span-2">
                       <span className="text-xs font-bold uppercase tracking-wider text-black/60">Video / File Link (Drive, YouTube, Dropbox)</span>
-                      <input type="url" placeholder="https://drive.google.com/... or https://youtube.com/..." className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40" />
+                      <input
+                        type="url"
+                        value={projectForm.resourceLink}
+                        onChange={(e) => handleProjectFormChange('resourceLink', e.target.value)}
+                        placeholder="https://drive.google.com/... or https://youtube.com/..."
+                        className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40"
+                      />
                     </label>
                     <label className="block md:col-span-2">
                       <span className="text-xs font-bold uppercase tracking-wider text-black/60">Upload Video or File</span>
@@ -242,41 +471,55 @@ const AIProjects: React.FC = () => {
                         <input
                           type="file"
                           accept="video/*,.pdf,.doc,.docx,.ppt,.pptx,.zip"
+                          onChange={(e) => setProjectUploadFile(e.target.files?.[0] || null)}
                           className="w-full text-sm text-black/75 file:mr-4 file:rounded-full file:border-0 file:bg-black file:px-4 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-black/85"
                         />
                         <p className="mt-2 text-xs text-black/50">Accepted formats: MP4, MOV, PDF, DOC, PPT, ZIP.</p>
                       </div>
                     </label>
-                    <label className="block">
-                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Current Stage</span>
-                      <select className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40">
-                        <option>Concept</option>
-                        <option>Prototype</option>
-                        <option>Beta</option>
-                        <option>Live Product</option>
-                      </select>
-                    </label>
-                    <label className="block">
-                      <span className="text-xs font-bold uppercase tracking-wider text-black/60">Main AI Need</span>
-                      <select className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-lw-green/40">
-                        <option>Data Collection</option>
-                        <option>Annotation</option>
-                        <option>NLP / Speech</option>
-                        <option>Computer Vision</option>
-                      </select>
-                    </label>
                     <label className="block md:col-span-2">
                       <span className="text-xs font-bold uppercase tracking-wider text-black/60">Idea Summary</span>
-                      <textarea rows={4} placeholder="What problem are you solving and what result do you want?" className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-lw-green/40" />
+                      <textarea
+                        rows={4}
+                        value={projectForm.description}
+                        onChange={(e) => handleProjectFormChange('description', e.target.value)}
+                        placeholder="What problem are you solving and what result do you want?"
+                        className="mt-2 w-full rounded-xl border border-black/15 px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-lw-green/40"
+                      />
                     </label>
                     <div className="md:col-span-2 flex flex-wrap gap-3 pt-2">
-                      <button type="submit" className="px-7 py-3 rounded-full bg-lw-green-deep text-white text-sm font-bold transition-all hover:-translate-y-0.5 hover:bg-lw-green">
-                        Send Idea
+                      <button
+                        type="submit"
+                        disabled={isSubmittingProject}
+                        className="px-7 py-3 rounded-full bg-lw-green text-white text-sm font-bold transition-all hover:-translate-y-0.5 hover:bg-lw-green-deep disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {isSubmittingProject ? 'Sending...' : 'Send Idea'}
                       </button>
-                      <a href="#/contact" className="px-7 py-3 rounded-full bg-black text-white text-sm font-bold no-underline transition-all hover:-translate-y-0.5 hover:bg-black/85">
-                        Book Consultation
-                      </a>
+                      {projectSubmitNotice && (
+                        <p className="self-center text-sm text-black/70">
+                          {projectSubmitNotice}
+                        </p>
+                      )}
+                      {projectUploadFile && (
+                        <p className="self-center text-xs text-black/50">
+                          Selected file: {projectUploadFile.name}
+                        </p>
+                      )}
                     </div>
+                    {projectSubmitNotice && !projectUploadFile && (
+                      <div className="md:col-span-2">
+                        <p className="text-xs text-black/60">
+                          Submitted by: {projectForm.fullName || 'User'}
+                        </p>
+                      </div>
+                    )}
+                    {!projectSubmitNotice && (
+                      <div className="md:col-span-2">
+                        <p className="text-xs text-black/50">
+                          Your name, email, and contact number are included with every submission.
+                        </p>
+                      </div>
+                    )}
                   </form>
                 </div>
               </div>
