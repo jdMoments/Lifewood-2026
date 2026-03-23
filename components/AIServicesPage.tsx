@@ -120,16 +120,18 @@ const AIServicesPage: React.FC = () => {
             Lifewood delivers end-to-end AI data solutions—from multi-language data collection and annotation to model training and generative AI content. Leveraging our global workforce, industrialized methodology, and proprietary LiFT platform, we enable organizations to scale efficiently, reduce costs, and accelerate decision-making with high-quality, domain-specific datasets.
           </p>
           
-          <div className="flex items-center gap-6">
-            <a 
-              href="#/contact" 
-              className="px-10 py-4 bg-[#FFB347] text-lw-text-dark rounded-full font-bold text-lg no-underline shadow-xl shadow-orange-200/50 transition-all hover:-translate-y-1 hover:shadow-2xl active:scale-95"
-            >
-              Contact Us
+          <div className="flex items-center">
+            <a href="#/contact" className="relative inline-flex items-center group transition-all no-underline">
+              <span className="px-8 pr-14 py-3 bg-[#FFB347] text-black font-semibold rounded-full transition-all duration-300 group-hover:pr-12 group-hover:bg-[#FFA500]">
+                {t('nav.contactUs')}
+              </span>
+              <span className="absolute right-2 w-9 h-9 bg-[#FFD082] text-black rounded-full flex items-center justify-center transition-all duration-300 translate-x-1 group-hover:translate-x-0 group-hover:bg-[#FFB347]">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+              </span>
             </a>
-            <div className="w-12 h-12 rounded-full bg-lw-green-deep flex items-center justify-center text-white shadow-lg">
-              <span className="text-lg">↗</span>
-            </div>
           </div>
         </div>
       </section>
@@ -381,3 +383,4 @@ const AIServicesPage: React.FC = () => {
 };
 
 export default AIServicesPage;
+
