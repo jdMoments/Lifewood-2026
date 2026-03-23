@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
+import { isMissingResumeBucketError, uploadResumeFile, validateResumeFile } from '../lib/applicationResume';
 
 interface JoinModalProps {
   isOpen: boolean;
@@ -22,6 +23,7 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
   });
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
 
   // Prevent scrolling when modal is open
   React.useEffect(() => {
@@ -43,6 +45,21 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
     setStatus(null);
 
     try {
+      let uploadedResumeUrl: string | null = null;
+      let resumeUploadNotice = '';
+      if (resumeFile) {
+        try {
+          const uploadedResume = await uploadResumeFile(resumeFile);
+          uploadedResumeUrl = uploadedResume.publicUrl;
+        } catch (resumeUploadError: any) {
+          if (isMissingResumeBucketError(resumeUploadError)) {
+            resumeUploadNotice = ' Resume upload is temporarily unavailable, but your application was submitted.';
+          } else {
+            throw resumeUploadError;
+          }
+        }
+      }
+
       const normalizedEmail = formData.email.trim().toLowerCase();
       const normalizedProject = formData.project.trim();
       const normalizedPhoneNumber = formData.phoneNumber.trim();
@@ -59,12 +76,13 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
           degree: formData.degree.trim(),
           project_applied: normalizedProject,
           experience: formData.experience.trim(),
+          cv_url: uploadedResumeUrl,
           status: 'pending'
         }]);
 
       if (error) throw error;
 
-      setStatus({ type: 'success', message: 'Application submitted successfully!' });
+      setStatus({ type: 'success', message: `Application submitted successfully!${resumeUploadNotice}` });
       setFormData({
         firstName: '',
         lastName: '',
@@ -76,6 +94,7 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
         project: '',
         experience: ''
       });
+      setResumeFile(null);
       
       // Close modal after success after a short delay
       setTimeout(() => {
@@ -94,6 +113,18 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleResumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    try {
+      validateResumeFile(file);
+      setResumeFile(file);
+      setStatus(null);
+    } catch (error: any) {
+      setResumeFile(null);
+      setStatus({ type: 'error', message: error?.message || 'Invalid resume file.' });
+    }
   };
 
   return (
@@ -268,12 +299,15 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
                     <label className="text-sm font-semibold text-[#002D21]">Resume (PDF, DOC, DOCX)</label>
                     <div className="flex items-center gap-4 p-4 bg-[#F8F5F0] rounded-lg">
                       <input 
-                        type="file" 
-                        disabled
-                        className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-white file:text-[#002D21] hover:file:bg-gray-50 cursor-pointer w-full opacity-50"
+                        type="file"
+                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        onChange={handleResumeChange}
+                        className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-white file:text-[#002D21] hover:file:bg-gray-50 cursor-pointer w-full"
                       />
                     </div>
-                    <p className="text-[10px] text-gray-400 italic">File upload currently disabled in preview. Please fill the text fields.</p>
+                    <p className="text-[10px] text-gray-500 italic">
+                      {resumeFile ? `Selected file: ${resumeFile.name}` : 'Accepted files: PDF, DOC, DOCX (max 10 MB).'}
+                    </p>
                   </div>
 
                   <button 

@@ -262,6 +262,7 @@ create table if not exists public.applications (
   phone text,
   portfolio_url text,
   cv_url text,
+  interview_at timestamptz,
   status text default 'pending' not null
 );
 
@@ -276,6 +277,7 @@ alter table public.applications add column if not exists experience text;
 alter table public.applications add column if not exists phone text;
 alter table public.applications add column if not exists portfolio_url text;
 alter table public.applications add column if not exists cv_url text;
+alter table public.applications add column if not exists interview_at timestamptz;
 alter table public.applications add column if not exists status text default 'pending';
 
 alter table public.applications drop constraint if exists applications_status_check;
@@ -710,7 +712,7 @@ select id, profile_code, email, role, is_approved, created_at
 from public.profiles
 order by created_at desc nulls last;
 
-select id, first_name, last_name, email, phone, project_applied, status, created_at
+select id, first_name, last_name, email, phone, project_applied, cv_url, interview_at, status, created_at
 from public.applications
 order by created_at desc nulls last;
 
@@ -736,3 +738,45 @@ order by created_at desc nulls last;
 select id, user_email, device_type, browser, os, login_at
 from public.admin_login_activity
 order by login_at desc nulls last;
+
+-- ==========================================
+-- 11. RESUME STORAGE BUCKET + POLICIES
+-- ==========================================
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'application-resumes',
+  'application-resumes',
+  true,
+  10485760,
+  array[
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ]::text[]
+)
+on conflict (id) do update
+set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "Public can upload application resumes" on storage.objects;
+create policy "Public can upload application resumes" on storage.objects
+for insert
+to public
+with check (bucket_id = 'application-resumes');
+
+drop policy if exists "Public can view application resumes" on storage.objects;
+create policy "Public can view application resumes" on storage.objects
+for select
+to public
+using (bucket_id = 'application-resumes');
+
+drop policy if exists "Admins can delete application resumes" on storage.objects;
+create policy "Admins can delete application resumes" on storage.objects
+for delete
+to authenticated
+using (
+  bucket_id = 'application-resumes'
+  and public.is_admin_request()
+);

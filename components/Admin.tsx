@@ -15,6 +15,7 @@ const EMAILJS_SERVICE_ID = 'service_gtody9o';
 const EMAILJS_ACCEPT_TEMPLATE_ID = 'template_0qxt2rp';
 const EMAILJS_DECLINE_TEMPLATE_ID = 'template_10tdhwj';
 const EMAILJS_API_URL = 'https://api.emailjs.com/api/v1.0/email/send';
+const EMAILJS_PUBLIC_KEY_FALLBACK = 'EXXsfAlITcTrjyHi';
 const PROJECT_SUBMISSION_TABLE_CANDIDATES = ['project_submissions', 'project_submission'] as const;
 
 const isMissingDeclinedColumnError = (error: any) => {
@@ -30,6 +31,19 @@ const isMissingEvaluationColumnError = (error: any) => {
 const isMissingPositionColumnError = (error: any) => {
   const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
   return message.includes('does not exist') && message.includes('position');
+};
+
+const isMissingInterviewAtColumnError = (error: any) => {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return (
+    message.includes('interview_at') &&
+    (
+      message.includes('does not exist') ||
+      message.includes('could not find') ||
+      message.includes('schema cache') ||
+      message.includes('column')
+    )
+  );
 };
 
 const isMissingProjectSubmissionTableError = (error: any) => {
@@ -135,6 +149,7 @@ type AdminApplicationItem = {
   portfolio_url?: string | null;
   cv_url?: string | null;
   project_applied?: string | null;
+  interview_at?: string | null;
   position?: string | null;
   status?: 'pending' | 'accepted' | 'declined' | 'archived' | string;
 };
@@ -244,9 +259,15 @@ const Admin: React.FC = () => {
   const [applications, setApplications] = useState<AdminApplicationItem[]>([]);
   const [selectedApplicant, setSelectedApplicant] = useState<AdminApplicationItem | null>(null);
   const [applicantActionNotice, setApplicantActionNotice] = useState('');
+  const [applicantSuccessPopup, setApplicantSuccessPopup] = useState<{ title: string; subtitle?: string } | null>(null);
   const [isUpdatingApplicantStatus, setIsUpdatingApplicantStatus] = useState(false);
   const [openApplicantActionMenuId, setOpenApplicantActionMenuId] = useState<string | null>(null);
   const [applicantRowActionId, setApplicantRowActionId] = useState<string | null>(null);
+  const [applicantInterviewDate, setApplicantInterviewDate] = useState('');
+  const [applicantInterviewTime, setApplicantInterviewTime] = useState('');
+  const [isSavingApplicantInterview, setIsSavingApplicantInterview] = useState(false);
+  const [isApplicantInterviewSaved, setIsApplicantInterviewSaved] = useState(false);
+  const [applicantInterviewSavedAt, setApplicantInterviewSavedAt] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -324,8 +345,29 @@ const Admin: React.FC = () => {
   const [historyDeleteTarget, setHistoryDeleteTarget] = useState<HistoryDeleteTarget | null>(null);
   const roleDropdownRef = useRef<HTMLDivElement | null>(null);
   const applicantActionMenuRef = useRef<HTMLDivElement | null>(null);
+  const applicantSuccessPopupTimerRef = useRef<number | null>(null);
   const evaluationHistoryRef = useRef<HTMLDivElement | null>(null);
   const dashboardTaskScopeMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const showApplicantSuccessPopup = (title: string, subtitle?: string) => {
+    if (applicantSuccessPopupTimerRef.current) {
+      window.clearTimeout(applicantSuccessPopupTimerRef.current);
+    }
+    setApplicantSuccessPopup({ title, subtitle });
+    applicantSuccessPopupTimerRef.current = window.setTimeout(() => {
+      setApplicantSuccessPopup(null);
+      applicantSuccessPopupTimerRef.current = null;
+    }, 2400);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (applicantSuccessPopupTimerRef.current) {
+        window.clearTimeout(applicantSuccessPopupTimerRef.current);
+      }
+    };
+  }, []);
+
   const userGrowthData = [
     { name: 'Jan', users: 40 },
     { name: 'Feb', users: 75 },
@@ -988,6 +1030,74 @@ const Admin: React.FC = () => {
   const getApplicantPositionLabel = (application: Partial<AdminApplicationItem> | null | undefined) =>
     getApplicantPositionValue(application) || 'N/A';
 
+  const toDateInputValue = (value?: string | null) => {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const toTimeInputValue = (value?: string | null) => {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    const hours = String(parsed.getHours()).padStart(2, '0');
+    const minutes = String(parsed.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+
+  const formatInterviewSchedule = (value?: string | null) => {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toLocaleString([], {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
+  const formatInterviewDateForEmail = (value?: string | null) => {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toLocaleDateString([], {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  };
+
+  const formatInterviewTimeForEmail = (value?: string | null) => {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
+  const getFileExtensionFromUrl = (url?: string | null) => {
+    if (!url) return '';
+    const cleanUrl = url.split('?')[0].split('#')[0];
+    const lastSegment = cleanUrl.split('/').pop() || '';
+    const extension = lastSegment.includes('.') ? lastSegment.split('.').pop() || '' : '';
+    return extension.toLowerCase();
+  };
+
+  const getApplicantResumeDownloadName = (application: Partial<AdminApplicationItem> | null | undefined) => {
+    const first = asCleanText(application?.first_name || '').toLowerCase() || 'applicant';
+    const last = asCleanText(application?.last_name || '').toLowerCase() || 'resume';
+    const extension = getFileExtensionFromUrl(application?.cv_url) || 'pdf';
+    return `${first}-${last}-resume.${extension}`;
+  };
+
   const normalizeApplicationRecord = (record: any): AdminApplicationItem => {
     const firstName = asCleanText(record?.first_name);
     const lastName = asCleanText(record?.last_name);
@@ -1054,6 +1164,21 @@ const Admin: React.FC = () => {
     setSettingsNickName(nickName);
     setSettingsLanguage(preferredLanguage);
   }, [user?.id, profile?.full_name, profile?.nick_name, profile?.language]);
+
+  useEffect(() => {
+    if (!selectedApplicant) {
+      setApplicantInterviewDate('');
+      setApplicantInterviewTime('');
+      setIsApplicantInterviewSaved(false);
+      setApplicantInterviewSavedAt(null);
+      return;
+    }
+
+    setApplicantInterviewDate(toDateInputValue(selectedApplicant.interview_at));
+    setApplicantInterviewTime(toTimeInputValue(selectedApplicant.interview_at));
+    setIsApplicantInterviewSaved(Boolean(selectedApplicant.interview_at));
+    setApplicantInterviewSavedAt(selectedApplicant.interview_at || null);
+  }, [selectedApplicant?.id, selectedApplicant?.interview_at]);
 
   const fetchProjectSubmissions = async () => {
     setIsLoadingProjectSubmissions(true);
@@ -2059,9 +2184,17 @@ const Admin: React.FC = () => {
   };
 
   const sendApplicationDecisionEmail = async (application: any, status: 'accepted' | 'declined') => {
-    const publicKey = (import.meta.env.VITE_EMAILJS_PUBLIC_KEY as string | undefined)?.trim() || '';
-    if (!publicKey) {
-      throw new Error('Missing VITE_EMAILJS_PUBLIC_KEY in .env');
+    const configuredKeys = Array.from(
+      new Set(
+        [
+          (import.meta.env.VITE_EMAILJS_PUBLIC_KEY as string | undefined)?.trim(),
+          (import.meta.env.VITE_EMAILJS_API_KEY as string | undefined)?.trim(),
+          EMAILJS_PUBLIC_KEY_FALLBACK,
+        ].filter((key): key is string => Boolean(key))
+      )
+    );
+    if (!configuredKeys.length) {
+      throw new Error('Missing EmailJS public key');
     }
 
     const templateId = status === 'accepted' ? EMAILJS_ACCEPT_TEMPLATE_ID : EMAILJS_DECLINE_TEMPLATE_ID;
@@ -2071,6 +2204,9 @@ const Admin: React.FC = () => {
       throw new Error('Applicant email is empty');
     }
     const decisionLabel = status === 'accepted' ? 'Accepted' : 'Declined';
+    const interviewDate = formatInterviewDateForEmail(application?.interview_at);
+    const interviewTime = formatInterviewTimeForEmail(application?.interview_at);
+    const interviewSchedule = formatInterviewSchedule(application?.interview_at);
 
     const basePayload = {
       service_id: EMAILJS_SERVICE_ID,
@@ -2093,6 +2229,12 @@ const Admin: React.FC = () => {
             ? `Congratulations ${applicantName}, your application has been accepted.`
             : `Thank you ${applicantName} for applying. Your application was not selected this cycle.`,
         decision_date: new Date().toLocaleDateString(),
+        interview_date: interviewDate || 'To be announced',
+        interview_time: interviewTime || 'To be announced',
+        interview_datetime: interviewSchedule || 'To be announced',
+        interview_schedule: interviewSchedule || 'To be announced',
+        schedule_date: interviewDate || 'To be announced',
+        schedule_time: interviewTime || 'To be announced',
       },
     };
 
@@ -2118,50 +2260,174 @@ const Admin: React.FC = () => {
       throw new Error(parsedError);
     };
 
-    try {
-      await sendRequest({
-        ...basePayload,
-        public_key: publicKey,
-      });
-    } catch (firstError) {
+    let lastError: unknown = null;
+    for (const key of configuredKeys) {
       try {
         await sendRequest({
           ...basePayload,
-          user_id: publicKey,
+          public_key: key,
         });
-      } catch (secondError) {
-        const firstMessage = firstError instanceof Error ? firstError.message : '';
-        const secondMessage = secondError instanceof Error ? secondError.message : '';
-        throw new Error(secondMessage || firstMessage || 'EmailJS failed');
+        return;
+      } catch (publicKeyError) {
+        lastError = publicKeyError;
+      }
+
+      try {
+        await sendRequest({
+          ...basePayload,
+          user_id: key,
+        });
+        return;
+      } catch (userIdError) {
+        lastError = userIdError;
       }
     }
+
+    const errorMessage = lastError instanceof Error ? lastError.message : '';
+    throw new Error(errorMessage || 'EmailJS failed');
   };
 
   if (authLoading && !user) return null;
 
   if (!user) return null;
-  const handleUpdateApplicationStatus = async (application: any, status: 'accepted' | 'declined') => {
-    if (!application?.id) return;
-    setIsUpdatingApplicantStatus(true);
+
+  const handleSaveApplicantInterviewSchedule = async () => {
+    if (!selectedApplicant?.id) return;
+    if (!applicantInterviewDate || !applicantInterviewTime) {
+      setApplicantActionNotice('Please select both interview date and time.');
+      return;
+    }
+
+    const localDateTime = new Date(`${applicantInterviewDate}T${applicantInterviewTime}:00`);
+    if (Number.isNaN(localDateTime.getTime())) {
+      setApplicantActionNotice('Interview schedule is invalid. Please try again.');
+      return;
+    }
+
+    const interviewAtIso = localDateTime.toISOString();
+
+    setIsSavingApplicantInterview(true);
     setApplicantActionNotice('');
 
     try {
       const { error } = await supabase
         .from('applications')
-        .update({ status })
-        .eq('id', application.id);
-      
+        .update({ interview_at: interviewAtIso })
+        .eq('id', selectedApplicant.id);
+
       if (error) throw error;
-      
-      setApplications((prev) => prev.map((app) => app.id === application.id ? { ...app, status } : app));
+
+      setApplications((prev) =>
+        prev.map((app) =>
+          app.id === selectedApplicant.id ? { ...app, interview_at: interviewAtIso } : app
+        )
+      );
+      setSelectedApplicant((prev) =>
+        prev && prev.id === selectedApplicant.id
+          ? { ...prev, interview_at: interviewAtIso }
+          : prev
+      );
+      setIsApplicantInterviewSaved(true);
+      setApplicantInterviewSavedAt(interviewAtIso);
+      setApplicantActionNotice('');
+      showApplicantSuccessPopup('Schedule Saved', formatInterviewSchedule(interviewAtIso));
+    } catch (error) {
+      console.error('Error saving interview schedule:', error);
+      if (isMissingInterviewAtColumnError(error)) {
+        setApplications((prev) =>
+          prev.map((app) =>
+            app.id === selectedApplicant.id ? { ...app, interview_at: interviewAtIso } : app
+          )
+        );
+        setSelectedApplicant((prev) =>
+          prev && prev.id === selectedApplicant.id
+            ? { ...prev, interview_at: interviewAtIso }
+            : prev
+        );
+        setIsApplicantInterviewSaved(true);
+        setApplicantInterviewSavedAt(interviewAtIso);
+        setApplicantActionNotice('');
+        showApplicantSuccessPopup('Schedule Saved', 'Saved for this session');
+      } else {
+        const errorMessage =
+          error instanceof Error && error.message
+            ? error.message.replace(/\s+/g, ' ').slice(0, 180)
+            : '';
+        setApplicantActionNotice(errorMessage ? `Unable to save interview schedule right now. (${errorMessage})` : 'Unable to save interview schedule right now.');
+      }
+    } finally {
+      setIsSavingApplicantInterview(false);
+    }
+  };
+
+  const handleUpdateApplicationStatus = async (application: any, status: 'accepted' | 'declined') => {
+    if (!application?.id) return;
+
+    if (status === 'accepted' && selectedApplicant?.id === application.id) {
+      if (!isApplicantInterviewSaved || !selectedApplicant.interview_at) {
+        setApplicantActionNotice('Please save the interview schedule first before accepting this application.');
+        return;
+      }
+    }
+
+    setIsUpdatingApplicantStatus(true);
+    setApplicantActionNotice('');
+
+    try {
+      let nextInterviewAt: string | null = application?.interview_at || null;
+      const canUseModalInterviewInput =
+        status === 'accepted' &&
+        selectedApplicant?.id === application.id &&
+        applicantInterviewDate &&
+        applicantInterviewTime;
+
+      if (canUseModalInterviewInput) {
+        const modalDateTime = new Date(`${applicantInterviewDate}T${applicantInterviewTime}:00`);
+        if (!Number.isNaN(modalDateTime.getTime())) {
+          nextInterviewAt = modalDateTime.toISOString();
+        }
+      }
+
+      let interviewColumnMissing = false;
+
+      if (status === 'accepted' && nextInterviewAt) {
+        const { error: interviewStatusError } = await supabase
+          .from('applications')
+          .update({ status, interview_at: nextInterviewAt })
+          .eq('id', application.id);
+
+        if (interviewStatusError) {
+          if (isMissingInterviewAtColumnError(interviewStatusError)) {
+            interviewColumnMissing = true;
+            const { error: statusOnlyError } = await supabase
+              .from('applications')
+              .update({ status })
+              .eq('id', application.id);
+            if (statusOnlyError) throw statusOnlyError;
+          } else {
+            throw interviewStatusError;
+          }
+        }
+      } else {
+        const { error: statusOnlyError } = await supabase
+          .from('applications')
+          .update({ status })
+          .eq('id', application.id);
+        if (statusOnlyError) throw statusOnlyError;
+      }
+
+      const updatedApplication = { ...application, status, interview_at: nextInterviewAt };
+      setApplications((prev) => prev.map((app) => app.id === application.id ? { ...app, status, interview_at: nextInterviewAt } : app));
 
       try {
-        await sendApplicationDecisionEmail(application, status);
-        setApplicantActionNotice(
-          status === 'accepted'
-            ? 'Application accepted and acceptance email sent.'
-            : 'Application declined and decline email sent.'
-        );
+        await sendApplicationDecisionEmail(updatedApplication, status);
+        const acceptedScheduleLabel = formatInterviewSchedule(nextInterviewAt);
+        setApplicantActionNotice('');
+        if (status === 'accepted') {
+          showApplicantSuccessPopup('Application Accepted', acceptedScheduleLabel || 'Email sent to applicant');
+        } else {
+          showApplicantSuccessPopup('Application Declined', 'Email sent to applicant');
+        }
       } catch (emailError) {
         console.error('EmailJS send error:', emailError);
         const errorMessage =
@@ -4890,12 +5156,50 @@ const Admin: React.FC = () => {
               <div>
                 <h2 className="text-3xl font-bold text-[#123f2f]">New Applicants</h2>
               </div>
-              {applicantActionNotice ? (
-                <p className={`text-xs font-semibold ${applicantActionNotice.toLowerCase().includes('not sent') || applicantActionNotice.toLowerCase().includes('unable') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-700')}`}>
+              {applicantActionNotice &&
+              (applicantActionNotice.toLowerCase().includes('unable') ||
+                applicantActionNotice.toLowerCase().includes('not sent') ||
+                applicantActionNotice.toLowerCase().includes('please') ||
+                applicantActionNotice.toLowerCase().includes('invalid') ||
+                applicantActionNotice.toLowerCase().includes('missing')) ? (
+                <p className={`text-xs font-semibold ${darkMode ? 'text-orange-300' : 'text-orange-600'}`}>
                   {applicantActionNotice}
                 </p>
               ) : null}
             </div>
+
+            <AnimatePresence>
+              {applicantSuccessPopup && (
+                <motion.div
+                  initial={{ opacity: 0, y: -14, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -12, scale: 0.96 }}
+                  transition={{ duration: 0.2 }}
+                  className={`fixed right-5 top-24 z-[90] w-[290px] rounded-2xl border p-4 shadow-2xl ${
+                    darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/10'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <img
+                      src="https://img.icons8.com/color/96/ok--v1.png"
+                      alt="Success"
+                      className="w-10 h-10 rounded-xl object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="min-w-0">
+                      <p className={`text-sm font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                        {applicantSuccessPopup.title}
+                      </p>
+                      {applicantSuccessPopup.subtitle ? (
+                        <p className={`text-xs mt-1 ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                          {applicantSuccessPopup.subtitle}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             <div className={`rounded-[40px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
               <div className="flex items-center justify-between mb-6">
@@ -5058,7 +5362,7 @@ const Admin: React.FC = () => {
                     initial={{ opacity: 0, scale: 0.9, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                    className={`relative w-full max-w-lg rounded-[32px] p-8 shadow-2xl overflow-hidden ${darkMode ? 'bg-slate-800 text-slate-200' : 'bg-white text-gray-900'}`}
+                    className={`relative w-full max-w-2xl rounded-[32px] p-8 shadow-2xl max-h-[90vh] overflow-y-auto ${darkMode ? 'bg-slate-800 text-slate-200' : 'bg-white text-gray-900'}`}
                   >
                     <div className="flex justify-between items-start mb-8">
                       <div>
@@ -5074,10 +5378,10 @@ const Admin: React.FC = () => {
                     </div>
 
                     <div className="space-y-6 mb-10">
-                      <div className="grid grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <div>
                           <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Email</p>
-                          <p className="text-sm font-medium">{selectedApplicant.email}</p>
+                          <p className="text-sm font-medium">{selectedApplicant.email || 'N/A'}</p>
                         </div>
                         <div>
                           <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Phone</p>
@@ -5085,38 +5389,164 @@ const Admin: React.FC = () => {
                         </div>
                       </div>
 
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <div>
+                          <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Project Applied For</p>
+                          <p className="text-sm font-medium">{getApplicantPositionLabel(selectedApplicant)}</p>
+                        </div>
+                        <div>
+                          <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Age</p>
+                          <p className="text-sm font-medium">{selectedApplicant.age ?? 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Degree / Field</p>
+                          <p className="text-sm font-medium">{selectedApplicant.degree || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Submitted</p>
+                          <p className="text-sm font-medium">
+                            {selectedApplicant.created_at ? new Date(selectedApplicant.created_at).toLocaleString() : 'N/A'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Relevant Experience</p>
+                        <p className={`text-sm leading-relaxed ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>
+                          {selectedApplicant.experience || 'N/A'}
+                        </p>
+                      </div>
+
                       <div>
                         <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Portfolio</p>
-                        <a 
-                          href={selectedApplicant.portfolio_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-sm font-medium text-emerald-500 hover:underline break-all"
-                        >
-                          {selectedApplicant.portfolio_url || 'N/A'}
-                        </a>
+                        {selectedApplicant.portfolio_url ? (
+                          <a 
+                            href={selectedApplicant.portfolio_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-sm font-medium text-emerald-500 hover:underline break-all"
+                          >
+                            {selectedApplicant.portfolio_url}
+                          </a>
+                        ) : (
+                          <p className="text-sm font-medium">N/A</p>
+                        )}
                       </div>
 
                       <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-gray-50 border-gray-100'}`}>
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-4">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
                               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                             </div>
                             <div>
                               <p className="text-sm font-bold">Curriculum Vitae</p>
-                              <p className="text-[10px] text-gray-500">PDF Document • 2.4 MB</p>
+                              <p className="text-[10px] text-gray-500">
+                                {selectedApplicant.cv_url ? 'Uploaded resume file' : 'No resume uploaded'}
+                              </p>
                             </div>
                           </div>
-                          <a 
-                            href={selectedApplicant.cv_url} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-xs font-bold text-emerald-500 hover:text-emerald-400 transition-colors"
-                          >
-                            View CV
-                          </a>
+                          {selectedApplicant.cv_url ? (
+                            <div className="flex items-center gap-2">
+                              <a
+                                href={selectedApplicant.cv_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-500 hover:text-emerald-400 transition-colors"
+                              >
+                                View File
+                              </a>
+                              <a
+                                href={selectedApplicant.cv_url}
+                                download={getApplicantResumeDownloadName(selectedApplicant)}
+                                className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border transition-colors ${
+                                  darkMode
+                                    ? 'border-slate-600 text-slate-200 hover:bg-slate-700'
+                                    : 'border-gray-200 text-gray-700 hover:bg-gray-100'
+                                }`}
+                                title="Download resume"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                  <polyline points="7 10 12 15 17 10"/>
+                                  <line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                              </a>
+                            </div>
+                          ) : (
+                            <span className={`text-xs font-semibold ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>N/A</span>
+                          )}
                         </div>
+                      </div>
+
+                      <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-gray-50 border-gray-100'}`}>
+                        <div className="flex items-start justify-between gap-4 mb-4">
+                          <div>
+                            <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Interview Schedule</p>
+                            <p className={`text-xs mt-1 ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                              Set calendar date and interview time while status is pending.
+                            </p>
+                          </div>
+                          {selectedApplicant.interview_at ? (
+                            <span className={`inline-flex text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full ${
+                              isApplicantInterviewSaved
+                                ? (darkMode ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-100 text-emerald-700')
+                                : (darkMode ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-100 text-amber-700')
+                            }`}>
+                              {isApplicantInterviewSaved ? 'Saved' : 'Unsaved'}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <label className="block">
+                            <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Date</span>
+                            <input
+                              type="date"
+                              value={applicantInterviewDate}
+                              onChange={(e) => {
+                                setApplicantInterviewDate(e.target.value);
+                                setIsApplicantInterviewSaved(false);
+                                setApplicantInterviewSavedAt(null);
+                              }}
+                              className={`mt-2 w-full rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-900'}`}
+                            />
+                          </label>
+                          <label className="block">
+                            <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Time</span>
+                            <input
+                              type="time"
+                              value={applicantInterviewTime}
+                              onChange={(e) => {
+                                setApplicantInterviewTime(e.target.value);
+                                setIsApplicantInterviewSaved(false);
+                                setApplicantInterviewSavedAt(null);
+                              }}
+                              className={`mt-2 w-full rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-900'}`}
+                            />
+                          </label>
+                        </div>
+
+                        {selectedApplicant.interview_at ? (
+                          <p className={`mt-3 text-xs font-medium ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                            Current schedule: {formatInterviewSchedule(selectedApplicant.interview_at)}
+                          </p>
+                        ) : null}
+
+                        {isApplicantInterviewSaved && applicantInterviewSavedAt ? (
+                          <p className={`mt-1 text-[11px] ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                            Saved at: {formatInterviewSchedule(applicantInterviewSavedAt)}
+                          </p>
+                        ) : null}
+
+                        <button
+                          type="button"
+                          onClick={handleSaveApplicantInterviewSchedule}
+                          disabled={isSavingApplicantInterview || isUpdatingApplicantStatus}
+                          className="mt-4 w-full py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-emerald-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          {isSavingApplicantInterview ? 'Saving Schedule...' : isApplicantInterviewSaved ? 'Saved' : 'Save Interview Schedule'}
+                        </button>
                       </div>
                     </div>
 
@@ -5131,8 +5561,8 @@ const Admin: React.FC = () => {
                       </button>
                       <button 
                         onClick={() => handleUpdateApplicationStatus(selectedApplicant, 'accepted')}
-                        disabled={isUpdatingApplicantStatus}
-                        title="Accept this applicant and send acceptance email"
+                        disabled={isUpdatingApplicantStatus || !isApplicantInterviewSaved || !selectedApplicant.interview_at}
+                        title={isApplicantInterviewSaved ? "Accept this applicant and send acceptance email" : "Save interview schedule first, then accept"}
                         className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         {isUpdatingApplicantStatus ? 'Processing...' : 'Accept'}
@@ -6524,4 +6954,3 @@ const Admin: React.FC = () => {
 };
 
 export default Admin;
-

@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import ChromaGrid, { type ChromaGridItem } from './ChromaGrid';
+import React, { useRef, useState } from 'react';
+import { motion } from 'motion/react';
 
 const DraggableImage: React.FC<{ 
   src: string; 
@@ -46,112 +45,90 @@ const DraggableImage: React.FC<{
 
 const AboutPage: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const projectManagerTitle = 'Project Manager';
-  const projectManagerFramePhoto =
-    'https://img.freepik.com/premium-photo/portrait-happy-businesswoman-with-arms-crossed-mockup-confidence-job-digital-agency-advisor-professional-female-tech-startup-project-manager-office-space-with-smile-face_590464-265295.jpg?semt=ais_hybrid&w=740&q=80';
-  const twinkyProfilePhoto =
-    'https://scontent.fceb2-2.fna.fbcdn.net/v/t39.30808-6/636733726_122231530088358365_7562308527376456388_n.jpg?stp=dst-jpg_p526x296_tt6&_nc_cat=102&ccb=1-7&_nc_sid=1d70fc&_nc_eui2=AeExUir2oZHU1qcHKsssk3hgH_9MxSRAN34f_0zFJEA3fhKOwZm6AlGESa_A83OeMxyFVUBjhTN7nKYPgLxXKXWl&_nc_ohc=rbOL0ULR9pUQ7kNvwGOEUh9&_nc_oc=AdqirsWF3eVRzuP1Nrdz4nna11fZhJI73hy5xWJ6_ulFSYkf3dAES0-3iVBxCkfWgjw&_nc_zt=23&_nc_ht=scontent.fceb2-2.fna&_nc_gid=l65EphYdGtB9pf4K4fPIBg&_nc_ss=7a32e&oh=00_AfxZco71PsVMyDuZ4dBhl0FSfqz7aVe3GdSrGPwMBGuUlw&oe=69C53A8A';
-  const projectManagerContact = 'https://web.facebook.com/twnky.casidsid.2024';
-  const teamRoleItems: (ChromaGridItem & {
-    backgroundImage: string;
-  })[] = [
+  const teamCardsContainerVariants = {
+    hidden: {},
+    visible: {
+      transition: {
+        staggerChildren: 0.12,
+        delayChildren: 0.05,
+      },
+    },
+  };
+  const teamCardVariants = {
+    hidden: {
+      opacity: 0,
+      y: 72,
+      scale: 0.9,
+      filter: 'blur(6px)',
+    },
+    visible: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      filter: 'blur(0px)',
+      transition: {
+        type: 'spring',
+        stiffness: 135,
+        damping: 16,
+        mass: 0.72,
+      },
+    },
+  };
+  const teamShowcase = [
     {
-      title: 'Project Manager',
-      borderColor: '#4a5d23',
-      gradient: 'linear-gradient(160deg, #f8f8f3, #edf3e2)',
-      image: projectManagerFramePhoto,
-      hideImage: false,
-      backgroundImage: projectManagerFramePhoto,
+      role: 'Project Manager',
+      name: 'Twinky Casidsid',
+      photo: 'https://wisenergy.site/Twinky.png',
+      frameBackground:
+        'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRX2j5ApR-u_CIfQt6RhyJRllXas3uIgOEAoA&s',
+      accent: '#046241',
+      description:
+        'Twinky leads planning, priorities, and delivery flow so the team can execute with clear direction. She aligns design, development, and testing milestones to keep Lifewood releases consistent and on schedule.',
+      profileLink: 'https://www.linkedin.com/in/twinky-casidsid/',
     },
     {
-      title: 'Hackger',
-      borderColor: '#1d4d40',
-      gradient: 'linear-gradient(160deg, #f7faf3, #e8f1e6)',
-      hideImage: true,
-      backgroundImage:
-        'https://images.unsplash.com/photo-1555949963-aa79dcee981c?auto=format&fit=crop&w=1600&q=80'
+      role: 'Hacker',
+      name: 'Darin Jan D. Soriano',
+      photo: 'https://wisenergy.site/Darin.png',
+      frameBackground: 'https://img.pikbest.com/ai/illus_our/20230423/1ca6f186fc039c04e75201a05d37ac72.jpg!w700wp',
+      accent: '#1e8f71',
+      description:
+        'Darin architects secure and scalable systems that keep Lifewood reliable under real-world demand. He turns complex technical challenges into stable platform features that move the entire product forward faster.',
     },
     {
-      title: 'Designer',
-      borderColor: '#ffb347',
-      gradient: 'linear-gradient(160deg, #fffaf2, #f9efe2)',
-      hideImage: true,
-      backgroundImage:
-        'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1600&q=80'
+      role: 'Designer',
+      name: 'Raily Sungahid',
+      photo: 'https://wisenergy.site/Raily.png',
+      frameBackground:
+        'https://png.pngtree.com/thumb_back/fh260/background/20260123/pngtree-person-working-on-laptop-with-cloud-computing-icons-floating-above-remote-image_20982267.webp',
+      accent: '#FFB347',
+      description:
+        'Raily shapes the product experience so each screen feels clear, modern, and easy to use. She blends visual storytelling with practical UX decisions to keep the interface both beautiful and efficient.',
+      profileLink: 'https://www.linkedin.com/in/raily-sungahid-5449a1392/',
     },
     {
-      title: 'Hustler',
-      borderColor: '#0e2a1e',
-      gradient: 'linear-gradient(160deg, #f5f8f6, #e3ece5)',
-      hideImage: true,
-      backgroundImage:
-        'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1600&q=80'
+      role: 'Hustler',
+      name: 'Jholmer Damayo',
+      photo: 'https://wisenergy.site/Jholmer.png',
+      frameBackground:
+        'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTrcyaZ9XGhcBO0zJFHYTS-Jzeea1Fu5c5vCA&s',
+      accent: '#0f5132',
+      description:
+        'Jholmer drives execution and momentum across delivery, partnerships, and day-to-day priorities. He keeps the team focused on outcomes and ensures important work reaches users on time.',
+      profileLink: 'https://www.linkedin.com/in/jholmer-damayo-10a603295/?locale=en_US',
     },
     {
-      title: 'Tester',
-      borderColor: '#2f6a5a',
-      gradient: 'linear-gradient(160deg, #f6faf8, #e8f2ec)',
-      hideImage: true,
-      backgroundImage:
-        'https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=1600&q=80'
-    }
+      role: 'Tester',
+      name: 'Gerard Luis Mandado',
+      photo: 'https://wisenergy.site/Gerard.png',
+      frameBackground:
+        'https://static.vecteezy.com/system/resources/thumbnails/070/673/426/small/quality-assurance-success-a-person-showing-approval-with-a-glowing-checkmark-on-digital-device-photo.jpeg',
+      accent: '#2f6a5a',
+      description:
+        'Gerard validates each feature with thorough testing so releases stay stable and dependable. He catches edge cases early and protects product quality from build to launch.',
+      profileLink: 'https://www.linkedin.com/in/gerard-luis-mandado-7143443a5/',
+    },
   ];
-  const [selectedRoleIndex, setSelectedRoleIndex] = useState<number | null>(null);
-  const [projectManagerExpanded, setProjectManagerExpanded] = useState(false);
-  const projectManagerResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const defaultSectionBackground =
-    'https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=2200&auto=format&fit=crop';
-  const visibleRoleItems = projectManagerExpanded
-    ? teamRoleItems.filter((role) => role.title !== projectManagerTitle)
-    : teamRoleItems;
-
-  const clearProjectManagerResetTimer = () => {
-    if (projectManagerResetTimerRef.current) {
-      clearTimeout(projectManagerResetTimerRef.current);
-      projectManagerResetTimerRef.current = null;
-    }
-  };
-
-  const resetToDefaultSecondSection = () => {
-    setProjectManagerExpanded(false);
-    setSelectedRoleIndex(null);
-    clearProjectManagerResetTimer();
-  };
-
-  const startProjectManagerResetTimer = () => {
-    clearProjectManagerResetTimer();
-    projectManagerResetTimerRef.current = setTimeout(() => {
-      resetToDefaultSecondSection();
-    }, 5000);
-  };
-
-  const handleRoleClick = (item: ChromaGridItem) => {
-    const clickedIndex = teamRoleItems.findIndex((role) => role.title === item.title);
-    if (clickedIndex < 0) {
-      return;
-    }
-    setSelectedRoleIndex(clickedIndex);
-    if (item.title === projectManagerTitle) {
-      setProjectManagerExpanded(true);
-      startProjectManagerResetTimer();
-      return;
-    }
-    setProjectManagerExpanded(false);
-    clearProjectManagerResetTimer();
-  };
-
-  useEffect(() => {
-    return () => {
-      clearProjectManagerResetTimer();
-    };
-  }, []);
-
-  const sectionBackgroundImage =
-    projectManagerExpanded
-      ? projectManagerFramePhoto
-      : selectedRoleIndex === null || teamRoleItems[selectedRoleIndex]?.title === projectManagerTitle
-      ? defaultSectionBackground
-      : (teamRoleItems[selectedRoleIndex]?.backgroundImage ?? defaultSectionBackground);
 
   return (
     <section className="relative min-h-screen bg-white pt-40 pb-20 px-8 md:px-20 z-10">
@@ -214,93 +191,79 @@ const AboutPage: React.FC = () => {
         </div>
 
         {/* Team Frames Section */}
-        <div
-          className="mt-24 rounded-[2.5rem] overflow-hidden relative min-h-[620px] md:min-h-[720px] lg:min-h-[760px] flex items-end"
-          onClickCapture={() => {
-            if (projectManagerExpanded) {
-              startProjectManagerResetTimer();
-            }
-          }}
-        >
-          <div className="absolute inset-0 overflow-hidden">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={`${sectionBackgroundImage}-${projectManagerExpanded ? 'expanded' : 'base'}`}
-                className="absolute inset-0"
-                initial={{ scale: 1.14, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{
-                  duration: 1.2,
-                  ease: [0.22, 1, 0.36, 1]
-                }}
-                style={{
-                  backgroundImage: `url(${sectionBackgroundImage})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center'
-                }}
-              />
-            </AnimatePresence>
+        <div className="mt-24">
+          <div className="text-center max-w-4xl mx-auto mb-14">
+            <h2 className="text-4xl md:text-6xl font-black tracking-tight mb-5" style={{ color: '#046241' }}>
+              Meet the Lifewood Interns Team
+            </h2>
+            <p className="text-[#2a2a2a] text-lg md:text-xl leading-relaxed">
+              Our core team combines engineering depth, product creativity, execution speed, and quality discipline.
+              Each role works in sync to transform ideas into reliable technology people can trust every day.
+            </p>
           </div>
+
           <motion.div
-            className="absolute inset-0"
-            animate={{
-              backgroundColor: projectManagerExpanded ? 'rgba(4, 16, 18, 0.62)' : 'rgba(0, 0, 0, 0.55)'
-            }}
-            transition={{ duration: 0.85, ease: 'easeInOut' }}
-          />
-          <div className="relative z-10 w-full h-full px-6 pb-8 pt-20 md:px-10 md:pb-10 md:pt-24 lg:px-16 lg:pb-14 lg:pt-20 flex flex-col justify-between">
-            {projectManagerExpanded && (
-              <motion.div
-                className="max-w-2xl"
-                initial={{ opacity: 0, x: -90 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 1.05, ease: [0.16, 1, 0.3, 1] }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-8"
+            variants={teamCardsContainerVariants}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: false, amount: 0.2 }}
+          >
+            {teamShowcase.map((member, index) => (
+              <motion.article
+                key={member.role}
+                variants={teamCardVariants}
+                whileHover={{ y: -8, scale: 1.01 }}
+                transition={{ duration: 0.24, ease: 'easeOut' }}
+                className="relative rounded-[2.25rem] overflow-hidden border border-white/25 shadow-[0_20px_60px_rgba(0,0,0,0.2)] min-h-[390px] group"
+                style={{
+                  backgroundImage: `url(${member.frameBackground})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                }}
               >
-                <p className="text-xs md:text-sm uppercase tracking-[0.35em] text-[#ffd28a] font-semibold mb-4">
-                  Project Manager
-                </p>
-                <h2 className="text-4xl md:text-6xl lg:text-7xl font-black text-white leading-[0.9]">
-                  TWINKY CASIDSID
-                </h2>
-                <p className="mt-5 text-white/95 text-base md:text-lg leading-relaxed max-w-xl">
-                  She is the Project Manager of Wisenergy, leading planning, delivery timelines, and team coordination across each milestone.
-                  She keeps cross-functional work aligned, manages risks early, and ensures Wisenergy releases are delivered with consistent quality.
-                </p>
-                <div className="mt-7 flex items-center gap-5">
-                  <div className="w-24 h-24 md:w-28 md:h-28 rounded-full border-4 border-white/80 overflow-hidden shadow-2xl bg-white/10">
-                    <img
-                      src={twinkyProfilePhoto}
-                      alt="Twinky Casidsid profile"
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
+                <div className="absolute inset-0 bg-gradient-to-br from-black/68 via-black/55 to-black/62 group-hover:from-black/75 group-hover:to-black/66 transition-colors duration-300" />
+
+                <div className="relative z-10 p-6 md:p-7 h-full flex flex-col">
+                  <div className="flex items-start justify-between gap-4">
+                    <span
+                      className="inline-flex items-center rounded-full px-4 py-1.5 text-[11px] font-black uppercase tracking-[0.22em] text-white"
+                      style={{ backgroundColor: member.accent }}
+                    >
+                      {member.role}
+                    </span>
+                    {member.profileLink && (
+                      <a
+                        href={member.profileLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-white/90 text-xs font-semibold underline underline-offset-4 hover:text-[#FFB347] transition-colors"
+                      >
+                        LinkedIn
+                      </a>
+                    )}
                   </div>
-                  <a
-                    href={projectManagerContact}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-white text-sm md:text-base font-semibold underline underline-offset-4 hover:text-[#ffd28a] transition-colors"
-                  >
-                    Contact: {projectManagerContact}
-                  </a>
+
+                  <div className="mt-6 flex items-center gap-4">
+                    <div className="w-20 h-20 rounded-full border-[3px] overflow-hidden bg-white/20 shadow-xl shrink-0" style={{ borderColor: member.accent }}>
+                      <img
+                        src={member.photo}
+                        alt={`${member.name} profile`}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl md:text-[2rem] font-black text-white leading-tight">{member.name}</h3>
+                      <p className="text-white/90 text-sm font-semibold mt-1">{member.role} • Lifewood</p>
+                    </div>
+                  </div>
+
+                  <p className="mt-6 text-white/95 leading-relaxed text-sm md:text-base">{member.description}</p>
                 </div>
-              </motion.div>
-            )}
-            <div className="w-full max-w-7xl mx-auto">
-              <ChromaGrid
-                items={visibleRoleItems}
-                className="about-team-grid"
-                columns={projectManagerExpanded ? 4 : 5}
-                rows={1}
-                radius={220}
-                damping={0.35}
-                fadeOut={0.5}
-                activeIndex={!projectManagerExpanded ? (selectedRoleIndex ?? undefined) : undefined}
-                onItemClick={handleRoleClick}
-              />
-            </div>
-          </div>
+              </motion.article>
+            ))}
+          </motion.div>
         </div>
 
         {/* Core Value Section */}

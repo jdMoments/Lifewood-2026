@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import Ballpit from './Ballpit';
 import { supabase } from '../lib/supabase';
+import { isMissingResumeBucketError, uploadResumeFile, validateResumeFile } from '../lib/applicationResume';
 
 const CareersPage: React.FC = () => {
   const { t } = useTranslation();
@@ -18,6 +19,7 @@ const CareersPage: React.FC = () => {
   });
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -30,6 +32,21 @@ const CareersPage: React.FC = () => {
     setStatus(null);
 
     try {
+      let uploadedResumeUrl: string | null = null;
+      let resumeUploadNotice = '';
+      if (resumeFile) {
+        try {
+          const uploadedResume = await uploadResumeFile(resumeFile);
+          uploadedResumeUrl = uploadedResume.publicUrl;
+        } catch (resumeUploadError: any) {
+          if (isMissingResumeBucketError(resumeUploadError)) {
+            resumeUploadNotice = ' Resume upload is temporarily unavailable, but your application was submitted.';
+          } else {
+            throw resumeUploadError;
+          }
+        }
+      }
+
       const normalizedEmail = formData.email.trim().toLowerCase();
       const normalizedProject = formData.project.trim();
       const normalizedPhoneNumber = formData.phoneNumber.trim();
@@ -46,12 +63,13 @@ const CareersPage: React.FC = () => {
           degree: formData.degree.trim(),
           project_applied: normalizedProject,
           experience: formData.experience.trim(),
+          cv_url: uploadedResumeUrl,
           status: 'pending'
         }]);
 
       if (error) throw error;
 
-      setStatus({ type: 'success', message: 'Application submitted successfully!' });
+      setStatus({ type: 'success', message: `Application submitted successfully!${resumeUploadNotice}` });
       setFormData({
         firstName: '',
         lastName: '',
@@ -63,11 +81,24 @@ const CareersPage: React.FC = () => {
         project: '',
         experience: ''
       });
+      setResumeFile(null);
     } catch (err: any) {
       console.error('Error submitting application:', err);
       setStatus({ type: 'error', message: err.message || 'Failed to submit application.' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    try {
+      validateResumeFile(file);
+      setResumeFile(file);
+      setStatus(null);
+    } catch (error: any) {
+      setResumeFile(null);
+      setStatus({ type: 'error', message: error?.message || 'Invalid resume file.' });
     }
   };
 
@@ -357,11 +388,14 @@ const CareersPage: React.FC = () => {
                 <div className="flex items-center gap-4 p-4 bg-[#F8F5F0] rounded-lg">
                   <input
                     type="file"
-                    disabled
-                    className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-white file:text-[#002D21] hover:file:bg-gray-50 cursor-pointer w-full opacity-50"
+                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    onChange={handleResumeChange}
+                    className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-white file:text-[#002D21] hover:file:bg-gray-50 cursor-pointer w-full"
                   />
                 </div>
-                <p className="text-[10px] text-gray-400 italic">File upload currently disabled in preview. Please fill the text fields.</p>
+                <p className="text-[10px] text-gray-500 italic">
+                  {resumeFile ? `Selected file: ${resumeFile.name}` : 'Accepted files: PDF, DOC, DOCX (max 10 MB).'}
+                </p>
               </div>
 
               <button

@@ -3,108 +3,66 @@ import { useTranslation } from '../hooks/useTranslation';
 
 type NewsView = 'internal' | 'external';
 
-type ExternalNewsItem = {
+type GlobalNewsItem = {
   id: string;
   title: string;
   description: string;
   link: string;
-  publishedAt: string;
   imageUrl: string;
-  source: string;
+  publishedAt: string;
 };
 
 type InternalNewsProps = {
   initialView?: NewsView;
 };
 
-const WORLD_FEED_URL = 'https://feeds.bbci.co.uk/news/world/rss.xml';
-const MIN_EXTERNAL_NEWS = 3;
+const GLOBAL_NEWS_ITEMS: GlobalNewsItem[] = [
+  {
+    id: 'ai-transforming-business',
+    title: 'How Artificial Intelligence Is Transforming Business',
+    description:
+      'AI is a broad term that refers to computer software that engages in human-like activities, including learning, planning, and problem-solving. AI’s most prevalent business use cases now involve generative AI, machine learning (ML), and deep learning, with generative AI experiencing explosive growth in the past few years.',
+    link: 'https://www.businessnewsdaily.com/9402-artificial-intelligence-business-trends.html',
+    imageUrl:
+      'https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&w=1200&q=80',
+    publishedAt: 'Global News',
+  },
+  {
+    id: 'ai-agents-global-economy',
+    title: 'AI Agents Changing Every Industry: Reshaping the Global Economy in Agentic Revolution',
+    description:
+      'The global economy is on the cusp of a paradigm shift driven by the emergence of Artificial Intelligence (AI) agents. These are not merely advanced chatbots or more efficient automation tools; they represent a fundamentally new class of digital actors capable of autonomous, goal-oriented action.',
+    link: 'https://www.klover.ai/ai-agents-changing-every-industry-reshaping-global-economy-agentic-revolution/',
+    imageUrl:
+      'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&w=1200&q=80',
+    publishedAt: 'Global News',
+  },
+  {
+    id: 'ai-pros-cons-debate',
+    title: 'Artificial Intelligence | Pros, Cons, Debate, Arguments, Computer Science, & Technology',
+    description:
+      'Artificial intelligence (AI) is the use of computers and machines to mimic the problem-solving and decision-making capabilities of the human mind. The idea of AI dates back at least 2,700 years, with ancient myths and early concepts exploring forms of artificial life and self-moving devices.',
+    link: 'https://www.britannica.com/procon/artificial-intelligence-AI-debate',
+    imageUrl:
+      'https://plus.unsplash.com/premium_photo-1683121710572-7723bd2e235d?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8QWl8ZW58MHx8MHx8fDA%3D',
+    publishedAt: 'Global News',
+  },
+];
 
-const parseText = (element: Element, tag: string) =>
-  (element.getElementsByTagName(tag)[0]?.textContent || '').trim();
+const LOCAL_NEWS_BACKGROUND =
+  'https://images.unsplash.com/photo-1771757737915-713727193271?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8TE9DQUwlMjBORVdTfGVufDB8fDB8fHww';
 
-const stripHtml = (value: string) => value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-
-const formatDate = (value: string) => {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return 'Recent';
-  return parsed.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
-};
-
-const buildFallbackImage = (seed: string) =>
-  `https://picsum.photos/seed/${encodeURIComponent(seed)}/800/600`;
+const GLOBAL_NEWS_BACKGROUND =
+  'https://plus.unsplash.com/premium_photo-1707080369554-359143c6aa0b?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NXx8Z2xvYmFsJTIwTkVXU3xlbnwwfHwwfHx8MA%3D%3D';
 
 const InternalNews: React.FC<InternalNewsProps> = ({ initialView = 'internal' }) => {
   const { t } = useTranslation();
   const [newsView, setNewsView] = useState<NewsView>(initialView);
-  const [externalNews, setExternalNews] = useState<ExternalNewsItem[]>([]);
-  const [isLoadingExternalNews, setIsLoadingExternalNews] = useState(false);
-  const [externalNewsError, setExternalNewsError] = useState('');
+  const activeBackground = newsView === 'internal' ? LOCAL_NEWS_BACKGROUND : GLOBAL_NEWS_BACKGROUND;
 
   useEffect(() => {
     setNewsView(initialView);
   }, [initialView]);
-
-  useEffect(() => {
-    if (newsView !== 'external') return;
-    if (externalNews.length >= MIN_EXTERNAL_NEWS) return;
-
-    const fetchExternalNews = async () => {
-      setIsLoadingExternalNews(true);
-      setExternalNewsError('');
-
-      try {
-        const response = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(WORLD_FEED_URL)}`);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const xmlText = await response.text();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(xmlText, 'application/xml');
-        const xmlError = doc.getElementsByTagName('parsererror')[0];
-        if (xmlError) {
-          throw new Error('Failed to parse news feed.');
-        }
-
-        const items = Array.from(doc.getElementsByTagName('item')).map((item, index) => {
-          const title = parseText(item, 'title');
-          const link = parseText(item, 'link');
-          const description = stripHtml(parseText(item, 'description'));
-          const publishedAt = parseText(item, 'pubDate');
-          const source = parseText(item, 'source') || 'BBC World';
-          const thumbnail = item.getElementsByTagName('media:thumbnail')[0]?.getAttribute('url') || '';
-          const enclosure = item.getElementsByTagName('enclosure')[0]?.getAttribute('url') || '';
-          const imageUrl = thumbnail || enclosure || buildFallbackImage(`${title || 'world-news'}-${index}`);
-
-          return {
-            id: `${link || title || index}`,
-            title: title || 'Untitled story',
-            description: description || 'Read the full article for details.',
-            link: link || '#',
-            publishedAt: publishedAt || '',
-            imageUrl,
-            source,
-          } satisfies ExternalNewsItem;
-        });
-
-        const topItems = items.slice(0, 6);
-        if (topItems.length < MIN_EXTERNAL_NEWS) {
-          throw new Error('Not enough external news items found.');
-        }
-
-        setExternalNews(topItems);
-      } catch (error) {
-        console.error('Unable to fetch external news:', error);
-        setExternalNewsError('Unable to fetch external news right now. Please try again shortly.');
-        setExternalNews([]);
-      } finally {
-        setIsLoadingExternalNews(false);
-      }
-    };
-
-    fetchExternalNews();
-  }, [newsView, externalNews.length]);
 
   const handleViewChange = (nextView: NewsView) => {
     setNewsView(nextView);
@@ -116,8 +74,7 @@ const InternalNews: React.FC<InternalNewsProps> = ({ initialView = 'internal' })
       <div
         className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat blur-sm scale-110"
         style={{
-          backgroundImage:
-            'url(https://media.istockphoto.com/id/1092964832/photo/global-communication-network-concept.webp?a=1&b=1&s=612x612&w=0&k=20&c=RiB_cXiQsT6Sn6sQSCS5btet1uBCsCsEIqVuPjh_Xhw=)',
+          backgroundImage: `url(${activeBackground})`,
         }}
       ></div>
       <div className="absolute inset-0 z-0 bg-white/70"></div>
@@ -135,7 +92,7 @@ const InternalNews: React.FC<InternalNewsProps> = ({ initialView = 'internal' })
               <p className="text-lw-text-body text-xl max-w-3xl leading-relaxed">
                 {newsView === 'internal'
                   ? t('internalNewsPage.description')
-                  : 'Live global updates from around the world. Stay informed with the latest external headlines.'}
+                  : 'Global updates from trusted sources around the world, curated for quick reading.'}
               </p>
             </div>
 
@@ -222,46 +179,23 @@ const InternalNews: React.FC<InternalNewsProps> = ({ initialView = 'internal' })
             </div>
           </>
         ) : (
-          <>
-            {isLoadingExternalNews && (
-              <div className="rounded-2xl border border-lw-green/20 bg-white/70 p-6 text-lw-text-dark text-sm">
-                Loading external world news...
-              </div>
-            )}
-
-            {!isLoadingExternalNews && externalNewsError && (
-              <div className="rounded-2xl border border-red-300 bg-red-50/90 p-6 text-red-700 text-sm">{externalNewsError}</div>
-            )}
-
-            {!isLoadingExternalNews && !externalNewsError && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-                {externalNews.slice(0, 6).map((item) => (
-                  <a
-                    key={item.id}
-                    href={item.link}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="group block cursor-pointer no-underline"
-                  >
-                    <div className="aspect-video overflow-hidden rounded-2xl mb-6 bg-gray-100">
-                      <img
-                        src={item.imageUrl}
-                        alt={item.title}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <div className="text-lw-green font-bold text-xs uppercase tracking-wider">{formatDate(item.publishedAt)}</div>
-                      <div className="text-xs font-semibold text-lw-text-body">{item.source}</div>
-                    </div>
-                    <h3 className="text-2xl font-bold mb-4 text-lw-text-dark group-hover:text-lw-green transition-colors">{item.title}</h3>
-                    <p className="text-lw-text-body text-sm leading-relaxed">{item.description}</p>
-                  </a>
-                ))}
-              </div>
-            )}
-          </>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+            {GLOBAL_NEWS_ITEMS.map((item) => (
+              <a key={item.id} href={item.link} target="_blank" rel="noreferrer" className="group block cursor-pointer no-underline">
+                <div className="aspect-video overflow-hidden rounded-2xl mb-6 bg-gray-100">
+                  <img
+                    src={item.imageUrl}
+                    alt={item.title}
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+                <div className="text-lw-green font-bold text-xs uppercase tracking-wider mb-3">{item.publishedAt}</div>
+                <h3 className="text-2xl font-bold mb-4 text-lw-text-dark group-hover:text-lw-green transition-colors">{item.title}</h3>
+                <p className="text-lw-text-body text-sm leading-relaxed">{item.description}</p>
+              </a>
+            ))}
+          </div>
         )}
       </div>
     </div>

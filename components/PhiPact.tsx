@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from '../hooks/useTranslation';
 import CircularText from './CircularText';
+import ScrollStack, { ScrollStackItem } from './ScrollStack';
 
 const countries = [
   'Argentina',
@@ -42,6 +43,40 @@ const PhiPact: React.FC = () => {
   const { t } = useTranslation();
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [secondSectionIndex, setSecondSectionIndex] = useState(0);
+  const swipeStartXRef = useRef<number | null>(null);
+  const secondSectionSlides = [
+    {
+      image: 'https://framerusercontent.com/images/7RZ9ESz7UTTmxn6ifh8I9jHlHA.png?width=1004&height=591',
+      alt: 'Philanthropy and Impact base background',
+    },
+    {
+      image:
+        'https://png.pngtree.com/thumb_back/fh260/background/20230704/pngtree-philanthropic-giving-tuesday-3d-illustration-of-a-hand-offering-a-heart-image_3729837.jpg',
+      alt: 'Philanthropic giving illustration',
+    },
+    {
+      image:
+        'https://media.licdn.com/dms/image/v2/D5612AQHmaBbIAZdQUA/article-cover_image-shrink_720_1280/article-cover_image-shrink_720_1280/0/1680624542878?e=2147483647&v=beta&t=nNF6jGr_gsZIIMLpaF56aubA_rqo-N3JABg2nBkTBlI',
+      alt: 'Impact background',
+    },
+  ];
+
+  const goToNextSecondSectionSlide = () => {
+    setSecondSectionIndex((prev) => (prev + 1) % secondSectionSlides.length);
+  };
+
+  const goToPrevSecondSectionSlide = () => {
+    setSecondSectionIndex((prev) => (prev - 1 + secondSectionSlides.length) % secondSectionSlides.length);
+  };
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      goToNextSecondSectionSlide();
+    }, 5000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -108,74 +143,155 @@ const PhiPact: React.FC = () => {
 
   return (
     <div className="pt-32 bg-white min-h-screen">
-      {/* Hero Section */}
-      <section className="px-8 md:px-20 py-20">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center gap-4 mb-8">
-            <div className="flex -space-x-2">
-              <div className="w-4 h-4 rounded-full bg-black"></div>
-              <div className="w-4 h-4 rounded-full bg-white border border-black/20"></div>
+      {/* Scroll Stack: Hero + 2nd Section */}
+      <ScrollStack
+        className="bg-white"
+        useWindowScroll
+        itemDistance={90}
+        itemScale={0.04}
+        itemStackDistance={34}
+        stackPosition="18%"
+        scaleEndPosition="9%"
+        baseScale={0.88}
+        scaleDuration={0.35}
+      >
+        <ScrollStackItem itemClassName="h-screen overflow-hidden">
+          <section className="relative h-screen px-8 md:px-20 py-20 overflow-hidden rounded-b-[2.25rem]">
+            <div className="absolute inset-0">
+              <img
+                src="https://media.licdn.com/dms/image/v2/D4E12AQFDWgd9kxtITg/article-cover_image-shrink_600_2000/article-cover_image-shrink_600_2000/0/1688130546295?e=2147483647&v=beta&t=UJe-QlKFtnmHqkhnXpz4Fmqvxm54Km-mCJ1P5CU1dq0"
+                alt="Philanthropy hero background"
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+              <div className="absolute inset-0 bg-white/78"></div>
             </div>
-            <div className="h-[1px] w-24 bg-black/20"></div>
-          </div>
-          
-          <h1 className="text-5xl md:text-7xl font-bold text-lw-text-dark mb-8 tracking-tight">
-            Philanthropy and Impact
-          </h1>
-          
-          <p className="text-lw-text-body text-lg md:text-xl max-w-2xl leading-relaxed mb-12">
-            We direct resources into education and developmental projects that create lasting change. 
-            Our approach goes beyond giving: it builds sustainable growth and empowers communities for the future.
-          </p>
-          
-          <div className="flex items-center gap-4">
-            <a 
-              href="#" 
-              className="px-8 py-3 bg-[#FFB347] text-lw-text-dark rounded-full font-bold text-sm no-underline shadow-lg shadow-orange-200 transition-all hover:-translate-y-1"
-            >
-              Contact Us
-            </a>
-            <div className="w-10 h-10 rounded-full bg-lw-green-deep flex items-center justify-center text-white">
-              <span className="text-xs">↗</span>
-            </div>
-          </div>
-        </div>
-      </section>
 
-      {/* Full Screen Image Section */}
-      <section className="relative w-full h-screen overflow-hidden">
-        <img 
-          src="https://framerusercontent.com/images/7RZ9ESz7UTTmxn6ifh8I9jHlHA.png?width=1004&height=591" 
-          alt="Philanthropy and Impact" 
-          className="w-full h-full object-cover"
-          referrerPolicy="no-referrer"
-        />
-        
-        {/* Overlay Content */}
-        <div className="absolute bottom-0 left-0 w-full bg-white py-20 px-4 md:px-12 border-t border-lw-border">
-          <div className="w-full flex flex-col items-center text-center">
-            {/* Black Dot */}
-            <div className="w-2 h-2 bg-black rounded-full mb-12"></div>
-            
-            {/* Vision Text - Full Width */}
-            <p className="text-lg md:text-xl lg:text-[24px] font-normal text-black leading-[1.5] mb-12 w-full tracking-[1px] px-4">
-              Our vision is of a world where financial investment plays a central role in solving the social and environmental challenges facing the global community, specifically in Africa and the Indian sub-continent
-            </p>
-            
-            {/* Know Us Better Button - Resized and Merging Hover Effect */}
-            <div className="flex items-center group cursor-pointer">
+            <div className="max-w-7xl mx-auto relative z-10">
+              <div className="flex items-center gap-4 mb-8">
+                <div className="flex -space-x-2">
+                  <div className="w-4 h-4 rounded-full bg-black"></div>
+                  <div className="w-4 h-4 rounded-full bg-white border border-black/20"></div>
+                </div>
+                <div className="h-[1px] w-24 bg-black/20"></div>
+              </div>
+
+              <h1 className="text-5xl md:text-7xl font-bold text-lw-text-dark mb-8 tracking-tight">
+                Philanthropy and Impact
+              </h1>
+
+              <p className="text-lw-text-body text-lg md:text-xl max-w-2xl leading-relaxed mb-12">
+                We direct resources into education and developmental projects that create lasting change.
+                Our approach goes beyond giving: it builds sustainable growth and empowers communities for the future.
+              </p>
               <div className="flex items-center">
-                <div className="px-6 py-2 bg-[#0D2319] text-white rounded-full font-semibold text-sm transition-all duration-300 group-hover:rounded-r-none group-hover:pr-2">
-                  Know Us Better
-                </div>
-                <div className="w-9 h-9 bg-[#1a2e24] rounded-full ml-3 flex items-center justify-center text-white transition-all duration-300 group-hover:ml-0 group-hover:rounded-l-none group-hover:bg-[#0D2319]">
-                  <span className="text-base">→</span>
-                </div>
+                <a
+                  href="#"
+                  className="relative inline-flex items-center group no-underline"
+                >
+                  <span className="px-8 pr-14 py-3 bg-[#FFB347] text-black font-semibold rounded-full transition-all duration-300 group-hover:pr-12 group-hover:bg-[#FFA500]">
+                    Contact Us
+                  </span>
+                  <span className="absolute right-2 w-9 h-9 bg-[#FFD082] text-black rounded-full flex items-center justify-center transition-all duration-300 translate-x-1 group-hover:translate-x-0 group-hover:bg-[#FFB347]">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                      <polyline points="12 5 19 12 12 19" />
+                    </svg>
+                  </span>
+                </a>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
+          </section>
+        </ScrollStackItem>
+
+        <ScrollStackItem itemClassName="h-screen overflow-hidden rounded-[2.25rem] shadow-[0_30px_80px_rgba(0,0,0,0.22)]">
+          <section
+            className="relative w-full h-screen overflow-hidden"
+            onPointerDown={(event) => {
+              swipeStartXRef.current = event.clientX;
+            }}
+            onPointerUp={(event) => {
+              if (swipeStartXRef.current === null) return;
+              const deltaX = event.clientX - swipeStartXRef.current;
+              if (deltaX > 70) {
+                goToPrevSecondSectionSlide();
+              } else if (deltaX < -70) {
+                goToNextSecondSectionSlide();
+              }
+              swipeStartXRef.current = null;
+            }}
+            onPointerLeave={() => {
+              swipeStartXRef.current = null;
+            }}
+          >
+            <motion.img
+              key={secondSectionSlides[secondSectionIndex].image}
+              src={secondSectionSlides[secondSectionIndex].image}
+              alt={secondSectionSlides[secondSectionIndex].alt}
+              className="w-full h-full object-cover select-none"
+              referrerPolicy="no-referrer"
+              draggable={false}
+              initial={{ opacity: 0.35, scale: 1.08 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.85, ease: 'easeOut' }}
+            />
+
+            <div className="absolute inset-0 bg-gradient-to-r from-black/72 via-black/42 to-black/35" />
+
+            <AnimatePresence mode="wait">
+              {secondSectionIndex === 1 && (
+                <motion.div
+                  key="slide-two-text"
+                  initial={{ opacity: 0, x: -90 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -40 }}
+                  transition={{ duration: 0.7, ease: 'easeOut' }}
+                  className="absolute left-6 md:left-14 top-1/2 -translate-y-1/2 max-w-[92%] md:max-w-[42rem] bg-black/45 border border-white/30 backdrop-blur-md rounded-[2rem] p-6 md:p-10"
+                >
+                  <p className="text-white text-sm md:text-lg leading-relaxed">
+                    Lifewood embodies a mission of empowerment by facilitating the exchange of vital resources, specialized
+                    knowledge, and advanced technology to ensure communities and projects truly flourish. This approach
+                    places a deep-seated human connection at the core of every initiative, ensuring that innovation is
+                    always balanced with a commitment to global impact. By prioritizing the growth and well-being of
+                    others, the organization transforms technical progress into a sustainable foundation for collective
+                    success.
+                  </p>
+                </motion.div>
+              )}
+
+              {secondSectionIndex === 2 && (
+                <motion.div
+                  key="slide-three-impact"
+                  initial={{ opacity: 0, x: -90 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -40 }}
+                  transition={{ duration: 0.7, ease: 'easeOut' }}
+                  className="absolute left-6 md:left-14 top-1/2 -translate-y-1/2 max-w-[92%] md:max-w-[42rem] bg-black/45 border border-white/30 backdrop-blur-md rounded-[2rem] p-6 md:p-10"
+                >
+                  <p className="text-[#FFB347] text-xs md:text-sm font-black uppercase tracking-[0.22em] mb-4">IMPACT</p>
+                  <p className="text-white text-sm md:text-lg leading-relaxed">
+                    This approach ensures that every contribution acts as a catalyst for meaningful transformation, bridging
+                    the gap between current capabilities and future achievements. At its core, the effort is defined by a
+                    dedication to uplifting others and creating a lasting, positive influence on a global scale.
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3">
+              {secondSectionSlides.map((slide, index) => (
+                <button
+                  key={slide.image}
+                  type="button"
+                  onClick={() => setSecondSectionIndex(index)}
+                  className={`h-3 rounded-full transition-all duration-300 ${index === secondSectionIndex ? 'w-8 bg-white' : 'w-3 bg-white/55 hover:bg-white/80'}`}
+                  aria-label={`Go to slide ${index + 1}`}
+                />
+              ))}
+            </div>
+          </section>
+        </ScrollStackItem>
+      </ScrollStack>
 
       {/* Global Impact Map Section */}
       <section className="px-8 md:px-20 py-24 bg-white">
