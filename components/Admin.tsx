@@ -3996,7 +3996,7 @@ const Admin: React.FC = () => {
         ) : activeTab === 'Task' ? (
           <div className="space-y-8">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <div>
+              <div className="inline-block bg-white rounded-2xl border border-black/5 px-5 py-3 shadow-sm">
                 <h2 className="text-3xl font-bold text-[#123f2f]">Task</h2>
                 <p className={darkMode ? 'text-slate-400' : 'text-gray-500'}>Create and assign tasks for interns or employees.</p>
               </div>
@@ -4479,7 +4479,7 @@ const Admin: React.FC = () => {
         ) : activeTab === 'Evaluation' ? (
           <div className="space-y-8">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <div>
+              <div className="inline-block bg-white rounded-2xl border border-black/5 px-5 py-3 shadow-sm">
                 <h2 className="text-3xl font-bold text-[#123f2f]">Evaluation</h2>
                 <p className={darkMode ? 'text-slate-400' : 'text-gray-500'}>Review progress and finalize Pass or Fail with comments.</p>
               </div>
@@ -5078,7 +5078,7 @@ const Admin: React.FC = () => {
         ) : activeTab === 'Projects' ? (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
+              <div className="inline-block bg-white rounded-2xl border border-black/5 px-5 py-3 shadow-sm">
                 <h2 className="text-3xl font-bold text-[#123f2f]">Projects</h2>
                 <p className={`${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>Submitted project ideas from visitors and users.</p>
               </div>
@@ -5153,7 +5153,7 @@ const Admin: React.FC = () => {
         ) : activeTab === 'Applicants' ? (
           <div className="space-y-8">
             <div className="flex justify-between items-center mb-6">
-              <div>
+              <div className="inline-block bg-white rounded-2xl border border-black/5 px-5 py-3 shadow-sm">
                 <h2 className="text-3xl font-bold text-[#123f2f]">New Applicants</h2>
               </div>
               {applicantActionNotice &&
@@ -6010,7 +6010,9 @@ const Admin: React.FC = () => {
           <div className="space-y-8">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6">
               <div>
+                <div className="inline-block bg-white rounded-2xl border border-black/5 px-5 py-3 shadow-sm">
                 <h2 className="text-3xl font-bold text-[#123f2f]">Manage Users</h2>
+                </div>
                 {manageUsersNotice ? (
                   <p className={`text-xs font-semibold mt-1 ${manageUsersNotice.toLowerCase().includes('unable') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-600')}`}>
                     {manageUsersNotice}
