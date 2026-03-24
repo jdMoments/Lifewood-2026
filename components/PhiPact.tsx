@@ -39,10 +39,16 @@ const countries = [
   'Vietnam'
 ];
 
+const MAP_URL = 'https://lifewoodworldwidemap.vercel.app/';
+const MAP_ORIGIN = new URL(MAP_URL).origin;
+
 const PhiPact: React.FC = () => {
   const { t } = useTranslation();
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const mapLoadedRef = useRef(false);
+  const pendingCountryRef = useRef<string | null>(null);
+  const dispatchTimersRef = useRef<number[]>([]);
   const [secondSectionIndex, setSecondSectionIndex] = useState(0);
   const swipeStartXRef = useRef<number | null>(null);
   const secondSectionSlides = [
@@ -79,7 +85,57 @@ const PhiPact: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    return () => {
+      dispatchTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      dispatchTimersRef.current = [];
+    };
+  }, []);
+
+  const clearDispatchTimers = () => {
+    dispatchTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+    dispatchTimersRef.current = [];
+  };
+
+  const dispatchCountryToMap = (country: string) => {
+    const targetWindow = iframeRef.current?.contentWindow;
+    if (!targetWindow) return;
+
+    const payloads: Array<string | Record<string, any>> = [
+      { type: 'GO_TO_COUNTRY', country },
+      { type: 'SELECT_COUNTRY', name: country },
+      { type: 'ZOOM_TO_COUNTRY', country, zoom: 6 },
+      { type: 'FLY_TO_COUNTRY', country, zoom: 6 },
+      { action: 'goToCountry', country, zoom: 6 },
+      { action: 'selectCountry', country },
+      { event: 'country:selected', country, zoom: 6 },
+      { country, zoom: 6 },
+      country,
+      JSON.stringify({ type: 'GO_TO_COUNTRY', country, zoom: 6 }),
+    ];
+
+    payloads.forEach((payload) => {
+      targetWindow.postMessage(payload, MAP_ORIGIN);
+      targetWindow.postMessage(payload, '*');
+    });
+  };
+
+  const requestMapCountryFocus = (country: string) => {
+    pendingCountryRef.current = country;
+    if (!mapLoadedRef.current) return;
+
+    clearDispatchTimers();
+    const retryDelays = [0, 150, 400, 900];
+    dispatchTimersRef.current = retryDelays.map((delay) =>
+      window.setTimeout(() => {
+        dispatchCountryToMap(country);
+      }, delay)
+    );
+  };
+
+  useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      if (event.origin && event.origin !== MAP_ORIGIN) return;
+
       // Listen for messages from the map iframe
       // We expect the map to send the country name when a pin is clicked
       if (event.data) {
@@ -132,13 +188,7 @@ const PhiPact: React.FC = () => {
 
   const handleCountryClick = (country: string) => {
     setSelectedCountry(country);
-    if (iframeRef.current && iframeRef.current.contentWindow) {
-      // Send message to the iframe to navigate to the country
-      // We send multiple formats for maximum compatibility
-      iframeRef.current.contentWindow.postMessage({ type: 'GO_TO_COUNTRY', country }, '*');
-      iframeRef.current.contentWindow.postMessage({ type: 'SELECT_COUNTRY', name: country }, '*');
-      iframeRef.current.contentWindow.postMessage(country, '*');
-    }
+    requestMapCountryFocus(country);
   };
 
   return (
@@ -350,10 +400,16 @@ const PhiPact: React.FC = () => {
             <div className="flex-[1.5] bg-[#e0f2f1] rounded-[2rem] overflow-hidden shadow-lg border border-lw-border relative min-h-[500px]">
               <iframe 
                 ref={iframeRef}
-                src="https://lifewoodworldwidemap.vercel.app/" 
+                src={MAP_URL} 
                 className="w-full h-full border-none"
                 title="Lifewood Worldwide Map"
                 allow="fullscreen"
+                onLoad={() => {
+                  mapLoadedRef.current = true;
+                  if (pendingCountryRef.current) {
+                    requestMapCountryFocus(pendingCountryRef.current);
+                  }
+                }}
               />
             </div>
           </div>

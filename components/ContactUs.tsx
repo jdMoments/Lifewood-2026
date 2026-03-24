@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { motion, useDragControls } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 
+const CONTACT_MESSAGE_TABLE = 'inbox_messages';
+
 const ContactUs: React.FC = () => {
   const sectionRef = React.useRef<HTMLDivElement>(null);
   const dragControls = useDragControls();
@@ -28,11 +30,22 @@ const ContactUs: React.FC = () => {
     setStatus(null);
 
     try {
-      const { error } = await supabase
-        .from('contact_messages')
-        .insert([{ name, email, message }]);
+      const normalizedName = name.trim();
+      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedMessage = message.trim();
+      const payload = {
+        name: normalizedName,
+        email: normalizedEmail,
+        message: normalizedMessage,
+      };
 
-      if (error) throw error;
+      const { error } = await supabase
+        .from(CONTACT_MESSAGE_TABLE)
+        .insert([payload]);
+
+      if (error) {
+        throw error;
+      }
 
       setStatus({ type: 'success', message: 'Message sent successfully!' });
       setName('');

@@ -9,6 +9,15 @@ interface JoinModalProps {
 }
 
 const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
+  const isDuplicateApplicationEmailError = (error: any) => {
+    const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+    return (
+      error?.code === '23505' ||
+      message.includes('email is already exist') ||
+      (message.includes('duplicate') && message.includes('email'))
+    );
+  };
+
   const modalContentRef = useRef<HTMLDivElement>(null);
   const [formData, setFormData] = useState({
     firstName: '',
@@ -65,6 +74,15 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
       const normalizedPhoneNumber = formData.phoneNumber.trim();
       const normalizedPhone = normalizedPhoneNumber ? `${formData.phoneCountryCode} ${normalizedPhoneNumber}` : null;
 
+      const { data: emailExists, error: emailValidationError } = await supabase.rpc('application_email_exists', {
+        candidate_email: normalizedEmail,
+      });
+      if (!emailValidationError && emailExists === true) {
+        setStatus({ type: 'error', message: 'Email is Already Exist' });
+        setLoading(false);
+        return;
+      }
+
       const { error } = await supabase
         .from('applications')
         .insert([{
@@ -104,7 +122,11 @@ const JoinModal: React.FC<JoinModalProps> = ({ isOpen, onClose }) => {
 
     } catch (err: any) {
       console.error('Error submitting application:', err);
-      setStatus({ type: 'error', message: err.message || 'Failed to submit application.' });
+      if (isDuplicateApplicationEmailError(err)) {
+        setStatus({ type: 'error', message: 'Email is Already Exist' });
+      } else {
+        setStatus({ type: 'error', message: err.message || 'Failed to submit application.' });
+      }
     } finally {
       setLoading(false);
     }

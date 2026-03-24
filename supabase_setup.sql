@@ -280,10 +280,58 @@ alter table public.applications add column if not exists cv_url text;
 alter table public.applications add column if not exists interview_at timestamptz;
 alter table public.applications add column if not exists status text default 'pending';
 
+create or replace function public.application_email_exists(candidate_email text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.applications a
+    where lower(trim(coalesce(a.email, ''))) = lower(trim(coalesce(candidate_email, '')))
+  );
+$$;
+
+grant execute on function public.application_email_exists(text) to anon, authenticated;
+
+create or replace function public.prevent_duplicate_application_email()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  normalized_email text := lower(trim(coalesce(new.email, '')));
+begin
+  if normalized_email = '' then
+    return new;
+  end if;
+
+  if exists (
+    select 1
+    from public.applications a
+    where lower(trim(coalesce(a.email, ''))) = normalized_email
+      and (tg_op = 'INSERT' or a.id <> new.id)
+  ) then
+    raise exception 'Email is Already Exist' using errcode = '23505';
+  end if;
+
+  new.email := normalized_email;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_applications_prevent_duplicate_email on public.applications;
+create trigger trg_applications_prevent_duplicate_email
+before insert or update of email on public.applications
+for each row
+execute function public.prevent_duplicate_application_email();
+
 alter table public.applications drop constraint if exists applications_status_check;
 alter table public.applications
   add constraint applications_status_check
-  check (status in ('pending', 'accepted', 'declined'));
+  check (status in ('pending', 'accepted', 'declined', 'hired', 'archived'));
 
 alter table public.applications enable row level security;
 
@@ -389,7 +437,103 @@ for delete
 using (public.is_admin_request());
 
 -- ==========================================
--- 5. PROFILE SELF-HEAL RPC
+-- 5. CONTACT MESSAGES TABLES + RLS (INBOX)
+-- ==========================================
+create table if not exists public.inbox_messages (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamptz default timezone('utc'::text, now()) not null,
+  name text,
+  email text,
+  message text,
+  source_table text default 'contact_us',
+  source_id text
+);
+
+alter table public.inbox_messages add column if not exists created_at timestamptz default timezone('utc'::text, now());
+alter table public.inbox_messages add column if not exists name text;
+alter table public.inbox_messages add column if not exists email text;
+alter table public.inbox_messages add column if not exists message text;
+alter table public.inbox_messages add column if not exists source_table text default 'contact_us';
+alter table public.inbox_messages add column if not exists source_id text;
+alter table public.inbox_messages enable row level security;
+
+create unique index if not exists inbox_messages_source_key on public.inbox_messages (source_table, source_id);
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin
+      execute 'alter publication supabase_realtime add table public.inbox_messages';
+    exception
+      when duplicate_object then
+        null;
+    end;
+  end if;
+end $$;
+
+drop policy if exists "Public can submit inbox messages" on public.inbox_messages;
+create policy "Public can submit inbox messages" on public.inbox_messages
+for insert
+with check (true);
+
+drop policy if exists "Authenticated can view inbox messages" on public.inbox_messages;
+create policy "Authenticated can view inbox messages" on public.inbox_messages
+for select
+using (auth.role() = 'authenticated');
+
+drop policy if exists "Admins can update inbox messages" on public.inbox_messages;
+create policy "Admins can update inbox messages" on public.inbox_messages
+for update
+using (public.is_admin_request())
+with check (public.is_admin_request());
+
+drop policy if exists "Admins can delete inbox messages" on public.inbox_messages;
+create policy "Admins can delete inbox messages" on public.inbox_messages
+for delete
+using (public.is_admin_request());
+
+grant insert on table public.inbox_messages to anon, authenticated;
+grant select, update, delete on table public.inbox_messages to authenticated;
+
+-- Legacy contact table migration and cleanup
+do $$
+begin
+  if to_regclass('public.contact_messages') is not null then
+    insert into public.inbox_messages (name, email, message, created_at, source_table, source_id)
+    select
+      cm.name,
+      cm.email,
+      cm.message,
+      cm.created_at,
+      'contact_messages',
+      cm.id::text
+    from public.contact_messages cm
+    where cm.id is not null
+    on conflict (source_table, source_id) do nothing;
+  end if;
+
+  if to_regclass('public.contact_message') is not null then
+    insert into public.inbox_messages (name, email, message, created_at, source_table, source_id)
+    select
+      cm.name,
+      cm.email,
+      cm.message,
+      cm.created_at,
+      'contact_message',
+      cm.id::text
+    from public.contact_message cm
+    where cm.id is not null
+    on conflict (source_table, source_id) do nothing;
+  end if;
+end $$;
+
+drop function if exists public.copy_contact_to_inbox_messages();
+
+drop table if exists public.contact_message cascade;
+drop table if exists public.contact_messages cascade;
+
+-- ==========================================
+-- 6. PROFILE SELF-HEAL RPC
 -- ==========================================
 create or replace function public.ensure_my_profile()
 returns void
@@ -718,6 +862,10 @@ order by created_at desc nulls last;
 
 select id, full_name, email, project_name, status, created_at
 from public.project_submissions
+order by created_at desc nulls last;
+
+select id, name, email, message, created_at, source_table, source_id
+from public.inbox_messages
 order by created_at desc nulls last;
 
 select id, profile_code, email, role, is_approved

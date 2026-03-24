@@ -94,7 +94,10 @@ const THorizontal: React.FC = () => {
 };
 
 const HorizontalAccordion: React.FC = () => {
-  const [hoveredIndex, setHoveredIndex] = useState<number>(0);
+  const [activeIndex, setActiveIndex] = useState<number>(0);
+  const [hiddenChoiceIndex, setHiddenChoiceIndex] = useState<number | null>(null);
+  const revealTextRef = useRef<HTMLDivElement | null>(null);
+  const restoreTimerRef = useRef<number | null>(null);
 
   const sections = [
     {
@@ -120,61 +123,108 @@ const HorizontalAccordion: React.FC = () => {
     }
   ];
 
+  const activeSection = sections[activeIndex];
+  const visibleChoices = sections
+    .map((section, index) => ({ ...section, index }))
+    .filter((item) => item.index !== hiddenChoiceIndex);
+
+  useEffect(() => {
+    if (!revealTextRef.current) return;
+    gsap.fromTo(
+      revealTextRef.current,
+      { clipPath: 'inset(0 100% 0 0)', x: -34, opacity: 0 },
+      {
+        clipPath: 'inset(0 0 0 0)',
+        x: 0,
+        opacity: 1,
+        duration: 0.72,
+        ease: 'power3.out',
+      }
+    );
+  }, [activeIndex]);
+
+  useEffect(() => {
+    return () => {
+      if (restoreTimerRef.current) {
+        window.clearTimeout(restoreTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleSelectChoice = (index: number) => {
+    setActiveIndex(index);
+    setHiddenChoiceIndex(index);
+
+    if (restoreTimerRef.current) {
+      window.clearTimeout(restoreTimerRef.current);
+    }
+
+    restoreTimerRef.current = window.setTimeout(() => {
+      setHiddenChoiceIndex(null);
+      restoreTimerRef.current = null;
+    }, 5000);
+  };
+
   return (
-    <div className="flex flex-col lg:flex-row gap-4 h-[600px] items-stretch">
-      {sections.map((section, index) => {
-        const isActive = hoveredIndex === index;
-        return (
+    <div
+      className="relative rounded-[3rem] overflow-hidden min-h-[620px] border border-white/20 shadow-[0_26px_70px_rgba(0,0,0,0.24)]"
+      style={{
+        backgroundImage: `url(${activeSection.image})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+    >
+      <div className="absolute inset-0 bg-[linear-gradient(140deg,rgba(3,26,43,0.86)_0%,rgba(6,42,69,0.74)_45%,rgba(12,18,27,0.82)_100%)]" />
+
+      <div className="relative z-10 p-6 md:p-10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {visibleChoices.map((section) => {
+            const isActive = section.index === activeIndex;
+            return (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => handleSelectChoice(section.index)}
+                className={`text-left rounded-[1.6rem] overflow-hidden border transition-all duration-500 ${
+                  isActive
+                    ? 'border-white shadow-[0_18px_45px_rgba(0,0,0,0.45)] -translate-y-1'
+                    : 'border-white/30 hover:border-white/70'
+                }`}
+              >
+                <div className="relative h-[200px] md:h-[230px]">
+                  <img
+                    src={section.image}
+                    alt={section.title}
+                    className={`w-full h-full object-cover transition-all duration-500 ${isActive ? 'scale-105' : 'grayscale-[30%]'}`}
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <div className="absolute bottom-3 left-3 right-3">
+                    <p className="text-[11px] tracking-widest uppercase font-bold text-white/75">Image {section.id}</p>
+                    <h4 className="text-white text-xl font-bold leading-tight">{section.title}</h4>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-8">
           <div
-            key={section.id}
-            onMouseEnter={() => setHoveredIndex(index)}
-            className={`relative overflow-hidden group cursor-pointer border-l border-black/10 first:border-l-0 transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${isActive ? 'flex-[4]' : 'flex-[0.5]'}`}
+            ref={revealTextRef}
+            className="max-w-3xl rounded-[1.8rem] border border-white/25 bg-white/10 backdrop-blur-sm p-6 md:p-8"
           >
-            {isActive ? (
-              <div className="flex flex-col lg:flex-row h-full w-full p-8 gap-8 items-center">
-                <div className="w-full lg:w-1/3 space-y-6">
-                  <h3 className="text-3xl font-bold text-black">{section.title}</h3>
-                  <p className="text-gray-600 text-lg leading-relaxed">{section.desc}</p>
-                </div>
-                <div className="flex-1 relative h-full w-full">
-                  <div className="absolute inset-0 rounded-[3rem] overflow-hidden shadow-xl group/img">
-                    <img
-                      src={section.image}
-                      alt={section.title}
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover/img:scale-105"
-                      referrerPolicy="no-referrer"
-                    />
-                    {/* Glare Effect */}
-                    <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover/img:translate-x-full transition-transform duration-1000 ease-in-out"></div>
-                    </div>
-                    {/* Number Overlay */}
-                    <div className="absolute bottom-0 right-0 bg-white p-8 rounded-tl-[3rem] flex flex-col items-end">
-                      <span className="text-6xl font-bold text-black leading-none">{section.id}</span>
-                      <span className="text-sm font-bold text-black mt-2">{section.title}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="h-full w-full flex flex-col items-center justify-start pt-10 gap-8">
-                <div className="flex items-center gap-2">
-                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400 -rotate-45">
-                    <line x1="19" y1="12" x2="5" y2="12"></line>
-                    <polyline points="12 19 5 12 12 5"></polyline>
-                  </svg>
-                </div>
-                <div className="flex flex-col items-center gap-4">
-                  <span className="text-4xl font-bold text-gray-300">{section.id}</span>
-                  <div className="[writing-mode:vertical-lr] rotate-180 text-sm font-bold tracking-[0.3em] text-gray-400 whitespace-nowrap">
-                    {section.label}
-                  </div>
-                </div>
-              </div>
-            )}
+            <p className="text-xs tracking-[0.2em] uppercase font-extrabold text-white/75 mb-2">
+              {activeSection.id} {activeSection.label}
+            </p>
+            <h3 className="text-3xl md:text-4xl font-bold text-white mb-4">{activeSection.title}</h3>
+            <p className="text-white/90 text-base md:text-lg leading-relaxed">{activeSection.desc}</p>
+            <p className="text-xs md:text-sm text-white/70 mt-4">
+              Clicked image is hidden from choices and returns after 5 seconds of no click.
+            </p>
           </div>
-        );
-      })}
+        </div>
+      </div>
     </div>
   );
 };

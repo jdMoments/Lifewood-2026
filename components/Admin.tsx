@@ -16,6 +16,7 @@ const EMAILJS_ACCEPT_TEMPLATE_ID = 'template_0qxt2rp';
 const EMAILJS_DECLINE_TEMPLATE_ID = 'template_10tdhwj';
 const EMAILJS_API_URL = 'https://api.emailjs.com/api/v1.0/email/send';
 const EMAILJS_PUBLIC_KEY_FALLBACK = 'EXXsfAlITcTrjyHi';
+const EMAILJS_TEMPLATE_PARAM_KEY_REGEX = /^[A-Za-z0-9_]+$/;
 const PROJECT_SUBMISSION_TABLE_CANDIDATES = ['project_submissions', 'project_submission'] as const;
 
 const isMissingDeclinedColumnError = (error: any) => {
@@ -43,6 +44,16 @@ const isMissingInterviewAtColumnError = (error: any) => {
       message.includes('schema cache') ||
       message.includes('column')
     )
+  );
+};
+
+const isUnsupportedHiredStatusError = (error: any) => {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return (
+    error?.code === '23514' ||
+    error?.code === '22P02' ||
+    (message.includes('status') && message.includes('hired') && message.includes('constraint')) ||
+    message.includes('applications_status_check')
   );
 };
 
@@ -151,7 +162,7 @@ type AdminApplicationItem = {
   project_applied?: string | null;
   interview_at?: string | null;
   position?: string | null;
-  status?: 'pending' | 'accepted' | 'declined' | 'archived' | string;
+  status?: 'pending' | 'accepted' | 'declined' | 'hired' | 'archived' | string;
 };
 
 type ProjectSubmissionItem = {
@@ -169,6 +180,49 @@ type ProjectSubmissionItem = {
   uploaded_file_name?: string | null;
   main_ai_need?: string | null;
   status?: 'pending' | 'accepted' | 'declined' | string;
+};
+
+type ContactMessageItem = {
+  id: string;
+  created_at?: string | null;
+  name?: string | null;
+  full_name?: string | null;
+  email?: string | null;
+  message?: string | null;
+  source_table?: 'inbox_messages' | string | null;
+};
+
+type InboxReplyItem = {
+  id: string;
+  senderName: string;
+  senderEmail: string;
+  text: string;
+  sentAt: string;
+};
+
+type ResumeScoreSection = {
+  key: string;
+  label: string;
+  points: number;
+  max: number;
+  notes: string[];
+};
+
+type ResumeAnalysisResult = {
+  totalPoints: number;
+  maxPoints: number;
+  sections: ResumeScoreSection[];
+  analyzedAt: string;
+};
+
+type ProcessedApplicantAiAnalysis = {
+  applicantId: string;
+  applicantName: string;
+  totalPoints: number;
+  maxPoints: number;
+  skills: string[];
+  sections: ResumeScoreSection[];
+  analyzedAt: string;
 };
 
 type SettingsView = 'general' | 'history' | 'security';
@@ -231,6 +285,10 @@ type ManageFrameKey = 'interns' | 'pending' | 'employees' | 'admins';
 const MANAGE_FRAME_ORDER: ManageFrameKey[] = ['interns', 'pending', 'employees', 'admins'];
 const ADMIN_POSITION_OPTIONS = ['Manager', 'Hr', 'CEO', 'Senior Developer'];
 const APP_LANGUAGE_OPTIONS = ['English', 'Filipino', 'Japanese', 'Mandarin'];
+const CONTACT_MESSAGE_TABLE = 'inbox_messages' as const;
+const INBOX_READ_STORAGE_KEY = 'lifewood_admin_inbox_read_v1';
+const INBOX_REPLY_STORAGE_KEY = 'lifewood_admin_inbox_reply_v1';
+const HIRED_STATUS_OVERRIDE_STORAGE_KEY = 'lifewood_admin_hired_status_override_v1';
 
 const Admin: React.FC = () => {
   const { user, loading: authLoading, signOut: authSignOut } = useAuth();
@@ -258,9 +316,24 @@ const Admin: React.FC = () => {
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const [applications, setApplications] = useState<AdminApplicationItem[]>([]);
   const [selectedApplicant, setSelectedApplicant] = useState<AdminApplicationItem | null>(null);
+  const [processedApplicantStatusFilter, setProcessedApplicantStatusFilter] = useState<'all' | 'accepted' | 'declined'>('all');
+  const [processedApplicantNameSearch, setProcessedApplicantNameSearch] = useState('');
+  const [selectedProcessedApplicantId, setSelectedProcessedApplicantId] = useState('');
+  const [processedApplicantAiAnalysis, setProcessedApplicantAiAnalysis] = useState<ProcessedApplicantAiAnalysis | null>(null);
+  const [processedApplicantAiCache, setProcessedApplicantAiCache] = useState<Record<string, ProcessedApplicantAiAnalysis>>({});
+  const [isLoadingProcessedApplicantAi, setIsLoadingProcessedApplicantAi] = useState(false);
+  const [processedApplicantAiNotice, setProcessedApplicantAiNotice] = useState('');
+  const [isProcessedApplicantStatusMenuOpen, setIsProcessedApplicantStatusMenuOpen] = useState(false);
+  const [resumePreviewApplicant, setResumePreviewApplicant] = useState<AdminApplicationItem | null>(null);
+  const [isAnalyzingResume, setIsAnalyzingResume] = useState(false);
+  const [resumeAnalysisResult, setResumeAnalysisResult] = useState<ResumeAnalysisResult | null>(null);
+  const [resumeAnalysisNotice, setResumeAnalysisNotice] = useState('');
+  const [applicantResumePointsById, setApplicantResumePointsById] = useState<Record<string, number>>({});
+  const [isLoadingSelectedApplicantResumePoints, setIsLoadingSelectedApplicantResumePoints] = useState(false);
   const [applicantActionNotice, setApplicantActionNotice] = useState('');
   const [applicantSuccessPopup, setApplicantSuccessPopup] = useState<{ title: string; subtitle?: string } | null>(null);
   const [isUpdatingApplicantStatus, setIsUpdatingApplicantStatus] = useState(false);
+  const [hiredStatusOverrideIds, setHiredStatusOverrideIds] = useState<string[]>([]);
   const [openApplicantActionMenuId, setOpenApplicantActionMenuId] = useState<string | null>(null);
   const [applicantRowActionId, setApplicantRowActionId] = useState<string | null>(null);
   const [applicantInterviewDate, setApplicantInterviewDate] = useState('');
@@ -316,6 +389,18 @@ const Admin: React.FC = () => {
   const [isLoadingProjectSubmissions, setIsLoadingProjectSubmissions] = useState(false);
   const [projectSubmissionNotice, setProjectSubmissionNotice] = useState('');
   const [selectedProjectSubmission, setSelectedProjectSubmission] = useState<ProjectSubmissionItem | null>(null);
+  const [contactMessages, setContactMessages] = useState<ContactMessageItem[]>([]);
+  const [inboxSourceDebug, setInboxSourceDebug] = useState<Array<{ table: string; rows: number; error: string }>>([]);
+  const [selectedInboxMessageId, setSelectedInboxMessageId] = useState('');
+  const [isLoadingInbox, setIsLoadingInbox] = useState(false);
+  const [inboxNotice, setInboxNotice] = useState('');
+  const [inboxSearchTerm, setInboxSearchTerm] = useState('');
+  const [readInboxIds, setReadInboxIds] = useState<string[]>([]);
+  const [inboxReplies, setInboxReplies] = useState<Record<string, InboxReplyItem[]>>({});
+  const [inboxReplyDraft, setInboxReplyDraft] = useState('');
+  const [inboxReplyNotice, setInboxReplyNotice] = useState('');
+  const [isInboxReplyComposerOpen, setIsInboxReplyComposerOpen] = useState(false);
+  const [selectedInboxReplyView, setSelectedInboxReplyView] = useState<InboxReplyItem | null>(null);
   const [dashboardViewProfile, setDashboardViewProfile] = useState<any>(null);
   const [isProjectDecisionSaving, setIsProjectDecisionSaving] = useState(false);
   const [newAdminName, setNewAdminName] = useState('');
@@ -345,7 +430,9 @@ const Admin: React.FC = () => {
   const [historyDeleteTarget, setHistoryDeleteTarget] = useState<HistoryDeleteTarget | null>(null);
   const roleDropdownRef = useRef<HTMLDivElement | null>(null);
   const applicantActionMenuRef = useRef<HTMLDivElement | null>(null);
+  const processedApplicantStatusMenuRef = useRef<HTMLDivElement | null>(null);
   const applicantSuccessPopupTimerRef = useRef<number | null>(null);
+  const resumeAnalysisRequestRef = useRef(0);
   const evaluationHistoryRef = useRef<HTMLDivElement | null>(null);
   const dashboardTaskScopeMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -367,6 +454,110 @@ const Admin: React.FC = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (selectedApplicant) return;
+    resumeAnalysisRequestRef.current += 1;
+    setResumePreviewApplicant(null);
+    setIsAnalyzingResume(false);
+    setResumeAnalysisResult(null);
+    setResumeAnalysisNotice('');
+  }, [selectedApplicant]);
+
+  useEffect(() => {
+    try {
+      const storedReadIds = window.localStorage.getItem(INBOX_READ_STORAGE_KEY);
+      if (storedReadIds) {
+        const parsed = JSON.parse(storedReadIds);
+        if (Array.isArray(parsed)) {
+          setReadInboxIds(parsed.filter((value) => typeof value === 'string'));
+        }
+      }
+    } catch (error) {
+      console.warn('Unable to restore inbox read state:', error);
+    }
+
+    try {
+      const storedReplies = window.localStorage.getItem(INBOX_REPLY_STORAGE_KEY);
+      if (storedReplies) {
+        const parsed = JSON.parse(storedReplies);
+        if (parsed && typeof parsed === 'object') {
+          const normalized: Record<string, InboxReplyItem[]> = {};
+          Object.entries(parsed as Record<string, any>).forEach(([messageId, replyValue], replyIndex) => {
+            if (!messageId) return;
+
+            const normalizeOneReply = (value: any, index: number): InboxReplyItem | null => {
+              if (!value || typeof value !== 'object') return null;
+              const text = asCleanText(value.text);
+              if (!text) return null;
+              const sentAt = asCleanText(value.sentAt) || new Date().toISOString();
+              return {
+                id: asCleanText(value.id) || `${messageId}-${sentAt}-${index}`,
+                senderName: asCleanText(value.senderName || value.name) || 'Admin',
+                senderEmail: asCleanText(value.senderEmail || value.email) || '',
+                text,
+                sentAt,
+              };
+            };
+
+            if (Array.isArray(replyValue)) {
+              const normalizedItems = replyValue
+                .map((entry, index) => normalizeOneReply(entry, index))
+                .filter((entry): entry is InboxReplyItem => Boolean(entry));
+              if (normalizedItems.length) {
+                normalized[messageId] = normalizedItems;
+              }
+              return;
+            }
+
+            const singleReply = normalizeOneReply(replyValue, replyIndex);
+            if (singleReply) {
+              normalized[messageId] = [singleReply];
+            }
+          });
+          setInboxReplies(normalized);
+        }
+      }
+    } catch (error) {
+      console.warn('Unable to restore inbox replies:', error);
+    }
+
+    try {
+      const storedHiredOverrides = window.localStorage.getItem(HIRED_STATUS_OVERRIDE_STORAGE_KEY);
+      if (storedHiredOverrides) {
+        const parsed = JSON.parse(storedHiredOverrides);
+        if (Array.isArray(parsed)) {
+          setHiredStatusOverrideIds(parsed.filter((value) => typeof value === 'string'));
+        }
+      }
+    } catch (error) {
+      console.warn('Unable to restore hired status overrides:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(INBOX_READ_STORAGE_KEY, JSON.stringify(readInboxIds));
+    } catch (error) {
+      console.warn('Unable to persist inbox read state:', error);
+    }
+  }, [readInboxIds]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(INBOX_REPLY_STORAGE_KEY, JSON.stringify(inboxReplies));
+    } catch (error) {
+      console.warn('Unable to persist inbox replies:', error);
+    }
+  }, [inboxReplies]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(HIRED_STATUS_OVERRIDE_STORAGE_KEY, JSON.stringify(hiredStatusOverrideIds));
+    } catch (error) {
+      console.warn('Unable to persist hired status overrides:', error);
+    }
+  }, [hiredStatusOverrideIds]);
 
   const userGrowthData = [
     { name: 'Jan', users: 40 },
@@ -428,12 +619,18 @@ const Admin: React.FC = () => {
       fetchPendingApprovals();
       fetchApplications();
       fetchProjectSubmissions();
+      fetchContactMessages();
       recordCurrentLoginActivity();
       fetchDashboardLoginPresence();
     }
   }, [user, authLoading]);
 
   const asCleanText = (value: any) => (value || '').toString().trim();
+  const withRequestTimeout = async <T,>(promise: PromiseLike<T>, ms: number, message: string): Promise<T> =>
+    Promise.race([
+      promise,
+      new Promise<T>((_, reject) => window.setTimeout(() => reject(new Error(message)), ms)),
+    ]);
   const isLikelyUuid = (value: string) =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
@@ -1098,6 +1295,412 @@ const Admin: React.FC = () => {
     return `${first}-${last}-resume.${extension}`;
   };
 
+  const includesAnyKeyword = (text: string, keywords: string[]) =>
+    keywords.some((keyword) => text.includes(keyword));
+
+  const extractLargestNumericMention = (text: string, regex: RegExp) => {
+    let maxValue = 0;
+    let match: RegExpExecArray | null = null;
+    while ((match = regex.exec(text)) !== null) {
+      const parsed = Number(match[1]);
+      if (!Number.isNaN(parsed)) {
+        maxValue = Math.max(maxValue, parsed);
+      }
+    }
+    return maxValue;
+  };
+
+  const getApplicantResumeSourceText = async (application: Partial<AdminApplicationItem>) => {
+    const metadataText = [
+      application?.first_name,
+      application?.last_name,
+      application?.email,
+      application?.phone,
+      application?.degree,
+      application?.experience,
+      application?.position,
+      application?.project_applied,
+      application?.portfolio_url,
+      application?.cv_url,
+    ]
+      .map((value) => asCleanText(value))
+      .filter(Boolean)
+      .join('\n');
+
+    const resumeUrl = asCleanText(application?.cv_url);
+    if (!resumeUrl) return metadataText;
+
+    try {
+      const response = await fetch(resumeUrl);
+      if (!response.ok) return metadataText;
+
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+      if (
+        contentType.includes('text') ||
+        contentType.includes('json') ||
+        contentType.includes('xml')
+      ) {
+        const responseText = await response.text();
+        return `${metadataText}\n${responseText.slice(0, 250000)}`;
+      }
+
+      const extension = getFileExtensionFromUrl(resumeUrl);
+      if (['pdf', 'txt', 'md', 'csv', 'doc', 'docx'].includes(extension)) {
+        const buffer = await response.arrayBuffer();
+        const bytes = new Uint8Array(buffer).slice(0, 900000);
+        const decoded = new TextDecoder('latin1').decode(bytes);
+        const cleaned = decoded.replace(/[^\x20-\x7E\r\n\t]+/g, ' ');
+        return `${metadataText}\n${cleaned}`;
+      }
+    } catch (error) {
+      console.warn('Unable to read resume file for analysis:', error);
+    }
+
+    return metadataText;
+  };
+
+  const analyzeApplicantResumeByPoints = (
+    sourceText: string,
+    application: Partial<AdminApplicationItem>
+  ): ResumeAnalysisResult => {
+    const normalizedText = ` ${sourceText.toLowerCase()} `;
+    const appliedRole = getApplicantPositionLabel(application).toLowerCase();
+
+    const frontRoleTerms = ['front end', 'frontend', 'front-end', 'ui developer', 'react developer'];
+    const backRoleTerms = ['back end', 'backend', 'back-end', 'api developer', 'server-side', 'server side'];
+    const relatedRoleTerms = ['full stack', 'fullstack', 'web developer', 'software developer'];
+
+    const hasFrontRole = includesAnyKeyword(normalizedText, frontRoleTerms);
+    const hasBackRole = includesAnyKeyword(normalizedText, backRoleTerms);
+    const hasRelatedRole = includesAnyKeyword(normalizedText, relatedRoleTerms);
+    const isApplyingFront = includesAnyKeyword(appliedRole, ['front end', 'frontend', 'front-end', 'ui']);
+    const isApplyingBack = includesAnyKeyword(appliedRole, ['back end', 'backend', 'back-end', 'api', 'server']);
+
+    const sections: ResumeScoreSection[] = [];
+    const pushSection = (key: string, label: string, points: number, max: number, notes: string[]) => {
+      sections.push({
+        key,
+        label,
+        points: Math.max(0, Math.min(max, points)),
+        max,
+        notes: notes.length ? notes : ['No matching signals found.'],
+      });
+    };
+
+    let roleMatchA = 0;
+    const roleMatchANotes: string[] = [];
+    if (hasFrontRole) {
+      roleMatchA += 30;
+      roleMatchANotes.push('Front-End Developer detected (+30)');
+    }
+    if (hasBackRole) {
+      roleMatchA += 30;
+      roleMatchANotes.push('Back-End Developer detected (+30)');
+    }
+    pushSection('role_match_a', 'Role Match A', roleMatchA, 60, roleMatchANotes);
+
+    const feSkillsA = [
+      { label: 'HTML', points: 5, keywords: [' html ', 'html5'] },
+      { label: 'CSS', points: 5, keywords: [' css ', 'css3'] },
+      { label: 'JavaScript', points: 10, keywords: ['javascript', ' js ', 'typescript', 'ts '] },
+      { label: 'React / Vue / Angular', points: 10, keywords: ['react', 'vue', 'angular'] },
+      { label: 'Tailwind / Bootstrap', points: 5, keywords: ['tailwind', 'bootstrap'] },
+      { label: 'Responsive Design', points: 5, keywords: ['responsive', 'media query'] },
+    ];
+    let fePointsA = 0;
+    const feNotesA: string[] = [];
+    feSkillsA.forEach((skill) => {
+      if (includesAnyKeyword(normalizedText, skill.keywords)) {
+        fePointsA += skill.points;
+        feNotesA.push(`${skill.label} (+${skill.points})`);
+      }
+    });
+    pushSection('frontend_a', 'Front-End Skills A', fePointsA, 30, feNotesA);
+
+    const beSkillsA = [
+      { label: 'Node.js / Express', points: 10, keywords: ['node.js', 'nodejs', 'express'] },
+      { label: 'PHP / Laravel', points: 10, keywords: [' php ', 'laravel'] },
+      { label: 'Python / Django / FastAPI', points: 10, keywords: [' python ', 'django', 'fastapi'] },
+      { label: 'Database', points: 5, keywords: ['mysql', 'postgresql', 'firebase', 'database', 'supabase'] },
+      { label: 'API Development', points: 5, keywords: [' api ', 'rest api', 'graphql'] },
+    ];
+    let bePointsA = 0;
+    const beNotesA: string[] = [];
+    beSkillsA.forEach((skill) => {
+      if (includesAnyKeyword(normalizedText, skill.keywords)) {
+        bePointsA += skill.points;
+        beNotesA.push(`${skill.label} (+${skill.points})`);
+      }
+    });
+    pushSection('backend_a', 'Back-End Skills A', bePointsA, 30, beNotesA);
+
+    const projectCount = Math.max(
+      extractLargestNumericMention(normalizedText, /(\d+)\s*\+?\s*(?:projects?|apps?|websites?)/gi),
+      (() => {
+        const mentions = (normalizedText.match(/\bproject(s)?\b/g) || []).length;
+        if (mentions >= 5) return 5;
+        if (mentions >= 3) return 3;
+        if (mentions >= 1) return 1;
+        return 0;
+      })()
+    );
+    let projectsPointsA = 0;
+    if (projectCount >= 5) projectsPointsA = 30;
+    else if (projectCount >= 3) projectsPointsA = 20;
+    else if (projectCount >= 1) projectsPointsA = 10;
+    pushSection(
+      'projects_a',
+      'Project Experience A',
+      projectsPointsA,
+      30,
+      projectCount > 0 ? [`Detected project count signal: ${projectCount}`] : []
+    );
+
+    const toolsA = [
+      { label: 'Git / GitHub', points: 5, keywords: ['git', 'github'] },
+      { label: 'REST API usage', points: 5, keywords: ['rest api', 'api integration', 'postman'] },
+      { label: 'Deployment', points: 5, keywords: ['netlify', 'vercel', 'deployment', 'deployed'] },
+      { label: 'Version control workflow', points: 5, keywords: ['version control', 'pull request', 'branch'] },
+    ];
+    let toolsPointsA = 0;
+    const toolsNotesA: string[] = [];
+    toolsA.forEach((tool) => {
+      if (includesAnyKeyword(normalizedText, tool.keywords)) {
+        toolsPointsA += tool.points;
+        toolsNotesA.push(`${tool.label} (+${tool.points})`);
+      }
+    });
+    pushSection('tools_a', 'Tools & Technologies A', toolsPointsA, 20, toolsNotesA);
+
+    let educationPointsA = 0;
+    const educationNotesA: string[] = [];
+    if (includesAnyKeyword(normalizedText, ['information technology', 'computer science', 'bsit', 'bscs'])) {
+      educationPointsA += 10;
+      educationNotesA.push('IT / Computer Science course (+10)');
+    }
+    if (includesAnyKeyword(normalizedText, ['capstone', 'thesis'])) {
+      educationPointsA += 10;
+      educationNotesA.push('Relevant capstone / thesis (+10)');
+    }
+    pushSection('education_a', 'Education A', educationPointsA, 20, educationNotesA);
+
+    let portfolioPointsA = 0;
+    const portfolioNotesA: string[] = [];
+    if (asCleanText(application.portfolio_url) || includesAnyKeyword(normalizedText, ['portfolio', 'http://', 'https://'])) {
+      portfolioPointsA += 5;
+      portfolioNotesA.push('Portfolio / website link (+5)');
+    }
+    const sectionHeadings = ['summary', 'experience', 'education', 'skills', 'projects', 'certification'];
+    const detectedHeadings = sectionHeadings.filter((heading) =>
+      normalizedText.includes(` ${heading} `)
+    ).length;
+    if (detectedHeadings >= 3) {
+      portfolioPointsA += 5;
+      portfolioNotesA.push('Clean and structured CV (+5)');
+    }
+    pushSection('portfolio_a', 'Portfolio & Quality A', portfolioPointsA, 10, portfolioNotesA);
+
+    let roleMatchB = 0;
+    const roleMatchBNotes: string[] = [];
+    if (hasFrontRole && hasBackRole) {
+      roleMatchB = 80;
+      roleMatchBNotes.push('Both FE + BE detected (Fullstack strong match) (+80)');
+    } else if (
+      (isApplyingFront && hasFrontRole) ||
+      (isApplyingBack && hasBackRole)
+    ) {
+      roleMatchB = 50;
+      roleMatchBNotes.push('Exact role match (+50)');
+    } else if (hasRelatedRole || includesAnyKeyword(normalizedText, ['web dev', 'web developer', 'fullstack'])) {
+      roleMatchB = 30;
+      roleMatchBNotes.push('Related role match (+30)');
+    }
+    pushSection('role_match_b', 'Role Match B', roleMatchB, 80, roleMatchBNotes);
+
+    const technicalSkillsB = [
+      { label: 'HTML', points: 5, keywords: [' html ', 'html5'] },
+      { label: 'CSS', points: 5, keywords: [' css ', 'css3'] },
+      { label: 'JavaScript', points: 10, keywords: ['javascript', ' js ', 'typescript', 'ts '] },
+      { label: 'React / Vue / Angular', points: 15, keywords: ['react', 'vue', 'angular'] },
+      { label: 'UI Framework', points: 5, keywords: ['tailwind', 'bootstrap', 'material ui', 'chakra'] },
+      { label: 'Node / PHP / Python', points: 15, keywords: ['node.js', 'nodejs', ' php ', 'python', 'laravel', 'django', 'fastapi'] },
+      { label: 'Database', points: 10, keywords: ['mysql', 'postgresql', 'firebase', 'supabase', 'database'] },
+      { label: 'API Development', points: 10, keywords: [' api ', 'rest api', 'graphql'] },
+    ];
+    let technicalPointsB = 0;
+    const technicalNotesB: string[] = [];
+    technicalSkillsB.forEach((skill) => {
+      if (includesAnyKeyword(normalizedText, skill.keywords)) {
+        technicalPointsB += skill.points;
+        technicalNotesB.push(`${skill.label} (+${skill.points})`);
+      }
+    });
+    pushSection('technical_b', 'Technical Skills B', technicalPointsB, 60, technicalNotesB);
+
+    const yearsExperience = extractLargestNumericMention(normalizedText, /(\d+)\s*\+?\s*(?:years?|yrs?)/gi);
+    let experiencePointsB = 0;
+    const experienceNotesB: string[] = [];
+    if (yearsExperience >= 3) {
+      experiencePointsB = 60;
+      experienceNotesB.push('3+ years experience (+60)');
+    } else if (yearsExperience >= 1) {
+      experiencePointsB = 40;
+      experienceNotesB.push('1-2 years experience (+40)');
+    } else if (includesAnyKeyword(normalizedText, ['intern', 'internship', 'ojt'])) {
+      experiencePointsB = 20;
+      experienceNotesB.push('Internship detected (+20)');
+    }
+    pushSection('experience_b', 'Experience B', experiencePointsB, 60, experienceNotesB);
+
+    let projectsPointsB = 0;
+    const projectsNotesB: string[] = [];
+    if (projectCount >= 5) {
+      projectsPointsB = 40;
+      projectsNotesB.push('5+ projects (+40)');
+    } else if (projectCount >= 3) {
+      projectsPointsB = 25;
+      projectsNotesB.push('3-5 projects (+25)');
+    } else if (projectCount >= 1) {
+      projectsPointsB = 15;
+      projectsNotesB.push('1-2 projects (+15)');
+    }
+    if (includesAnyKeyword(normalizedText, ['deployed', 'live demo', 'live project', 'netlify', 'vercel', 'production'])) {
+      projectsPointsB += 10;
+      projectsNotesB.push('Real-world / deployed projects bonus (+10)');
+    }
+    pushSection('projects_b', 'Projects B', projectsPointsB, 50, projectsNotesB);
+
+    let toolsPointsB = 0;
+    const toolsNotesB: string[] = [];
+    if (includesAnyKeyword(normalizedText, ['git', 'github'])) {
+      toolsPointsB += 5;
+      toolsNotesB.push('Git / GitHub (+5)');
+    }
+    if (includesAnyKeyword(normalizedText, ['cicd', 'ci/cd', 'deployment', 'deployed', 'netlify', 'vercel'])) {
+      toolsPointsB += 10;
+      toolsNotesB.push('CI/CD / Deployment (+10)');
+    }
+    if (includesAnyKeyword(normalizedText, ['aws', 'firebase', 'supabase', 'gcp', 'azure', 'cloud'])) {
+      toolsPointsB += 10;
+      toolsNotesB.push('Cloud platform usage (+10)');
+    }
+    pushSection('tools_b', 'Tools & Stack B', toolsPointsB, 25, toolsNotesB);
+
+    let educationPointsB = 0;
+    const educationNotesB: string[] = [];
+    if (includesAnyKeyword(normalizedText, ['information technology', 'computer science', 'bsit', 'bscs'])) {
+      educationPointsB += 15;
+      educationNotesB.push('IT / CS degree (+15)');
+    }
+    if (includesAnyKeyword(normalizedText, ['certification', 'certificate', 'udemy', 'coursera', 'aws certified'])) {
+      educationPointsB += 5;
+      educationNotesB.push('Relevant certifications (+5)');
+    }
+    pushSection('education_b', 'Education B', educationPointsB, 20, educationNotesB);
+
+    let portfolioPointsB = 0;
+    const portfolioNotesB: string[] = [];
+    if (asCleanText(application.portfolio_url) || includesAnyKeyword(normalizedText, ['portfolio', 'live demo', 'github.io', 'http://', 'https://'])) {
+      portfolioPointsB += 10;
+      portfolioNotesB.push('Portfolio / live projects (+10)');
+    }
+    if (detectedHeadings >= 3) {
+      portfolioPointsB += 5;
+      portfolioNotesB.push('Clean CV + good structure (+5)');
+    }
+    pushSection('portfolio_b', 'Portfolio & Quality B', portfolioPointsB, 15, portfolioNotesB);
+
+    let softSkillPoints = 0;
+    const softSkillNotes: string[] = [];
+    if (includesAnyKeyword(normalizedText, ['communication', 'collaboration', 'teamwork', 'stakeholder'])) {
+      softSkillPoints += 5;
+      softSkillNotes.push('Clear communication signal (+5)');
+    }
+    if (
+      includesAnyKeyword(normalizedText, ['motivated', 'passionate', 'eager', 'objective', 'goal']) ||
+      includesAnyKeyword(normalizedText, [appliedRole])
+    ) {
+      softSkillPoints += 5;
+      softSkillNotes.push('Role alignment / motivation signal (+5)');
+    }
+    pushSection('soft_b', 'Soft Skills & Fit B', softSkillPoints, 10, softSkillNotes);
+
+    const sectionWeights: Record<string, number> = {
+      role_match_a: 10,
+      frontend_a: 8,
+      backend_a: 8,
+      projects_a: 6,
+      tools_a: 6,
+      education_a: 4,
+      portfolio_a: 3,
+      role_match_b: 15,
+      technical_b: 15,
+      experience_b: 10,
+      projects_b: 7,
+      tools_b: 4,
+      education_b: 2,
+      portfolio_b: 1,
+      soft_b: 1,
+    };
+
+    const weightedSections = sections.map((section) => {
+      const weight = sectionWeights[section.key] ?? 0;
+      const ratio = section.max > 0 ? section.points / section.max : 0;
+      const weightedPoints = Math.max(0, Math.min(weight, Math.round(ratio * weight)));
+      return {
+        ...section,
+        points: weightedPoints,
+        max: weight,
+      };
+    });
+
+    const totalPoints = weightedSections.reduce((total, section) => total + section.points, 0);
+
+    return {
+      totalPoints,
+      maxPoints: 100,
+      sections: weightedSections,
+      analyzedAt: new Date().toISOString(),
+    };
+  };
+
+  const extractDetectedResumeSkills = (sourceText: string) => {
+    const normalizedText = ` ${sourceText.toLowerCase()} `;
+    const skillCatalog: Array<{ label: string; keywords: string[] }> = [
+      { label: 'HTML', keywords: [' html ', 'html5'] },
+      { label: 'CSS', keywords: [' css ', 'css3'] },
+      { label: 'JavaScript', keywords: ['javascript', ' js ', 'typescript', 'ts '] },
+      { label: 'React', keywords: ['react'] },
+      { label: 'Vue', keywords: ['vue'] },
+      { label: 'Angular', keywords: ['angular'] },
+      { label: 'Tailwind', keywords: ['tailwind'] },
+      { label: 'Bootstrap', keywords: ['bootstrap'] },
+      { label: 'Responsive Design', keywords: ['responsive', 'media query'] },
+      { label: 'Node.js', keywords: ['node.js', 'nodejs'] },
+      { label: 'Express', keywords: ['express'] },
+      { label: 'PHP', keywords: [' php ', 'php '] },
+      { label: 'Laravel', keywords: ['laravel'] },
+      { label: 'Python', keywords: [' python ', 'python3'] },
+      { label: 'Django', keywords: ['django'] },
+      { label: 'FastAPI', keywords: ['fastapi'] },
+      { label: 'MySQL', keywords: ['mysql'] },
+      { label: 'PostgreSQL', keywords: ['postgresql'] },
+      { label: 'Firebase', keywords: ['firebase'] },
+      { label: 'Supabase', keywords: ['supabase'] },
+      { label: 'REST API', keywords: ['rest api', 'api integration'] },
+      { label: 'GraphQL', keywords: ['graphql'] },
+      { label: 'Git', keywords: ['git'] },
+      { label: 'GitHub', keywords: ['github'] },
+      { label: 'Netlify', keywords: ['netlify'] },
+      { label: 'Vercel', keywords: ['vercel'] },
+      { label: 'AWS', keywords: ['aws'] },
+    ];
+
+    return skillCatalog
+      .filter((skillItem) => includesAnyKeyword(normalizedText, skillItem.keywords))
+      .map((skillItem) => skillItem.label);
+  };
+
   const normalizeApplicationRecord = (record: any): AdminApplicationItem => {
     const firstName = asCleanText(record?.first_name);
     const lastName = asCleanText(record?.last_name);
@@ -1136,6 +1739,218 @@ const Admin: React.FC = () => {
     };
   };
 
+  const normalizeContactMessageRecord = (
+    record: any,
+    index = 0,
+    sourceTable: ContactMessageItem['source_table'] = null
+  ): ContactMessageItem => {
+    const name = asCleanText(
+      record?.name ||
+      record?.full_name ||
+      record?.fullName ||
+      record?.sender_name ||
+      record?.user_name
+    );
+    const fullName = asCleanText(record?.full_name || record?.fullName);
+    const email = asCleanText(record?.email).toLowerCase();
+    const message = asCleanText(record?.message || record?.content || record?.text);
+    const createdAt = asCleanText(record?.created_at || record?.createdAt || record?.date_created);
+    const rawId = asCleanText(record?.id);
+    const fallbackId = `${createdAt || 'contact'}-${email || name || 'guest'}-${index}`;
+    const id = rawId ? `${sourceTable || 'contact'}-${rawId}` : `${sourceTable || 'contact'}-${fallbackId}`;
+
+    return {
+      ...record,
+      id,
+      created_at: createdAt || null,
+      name: name || null,
+      full_name: fullName || null,
+      email: email || null,
+      message: message || null,
+      source_table: sourceTable || null,
+    };
+  };
+
+  const getInboxSenderName = (messageItem?: Partial<ContactMessageItem> | null) => {
+    const directName = asCleanText(messageItem?.name || messageItem?.full_name);
+    if (directName) return directName;
+    return '';
+  };
+
+  const markInboxMessageAsRead = (messageId: string) => {
+    if (!messageId) return;
+    setReadInboxIds((previousIds) => (previousIds.includes(messageId) ? previousIds : [...previousIds, messageId]));
+  };
+
+  const handleSelectInboxMessage = (messageId: string) => {
+    setSelectedInboxMessageId(messageId);
+    markInboxMessageAsRead(messageId);
+    setInboxReplyNotice('');
+  };
+
+  const handleSendInboxReply = () => {
+    if (!selectedInboxMessageId) {
+      setInboxReplyNotice('Select a message first.');
+      return;
+    }
+
+    const replyText = asCleanText(inboxReplyDraft);
+    if (!replyText) {
+      setInboxReplyNotice('Reply message cannot be empty.');
+      return;
+    }
+
+    const senderName = asCleanText(
+      profile?.full_name ||
+      user?.user_metadata?.full_name ||
+      user?.user_metadata?.name ||
+      user?.email?.split('@')[0] ||
+      'Admin'
+    );
+    const senderEmail = asCleanText(user?.email || profile?.email).toLowerCase();
+    const sentAt = new Date().toISOString();
+
+    setInboxReplies((previousReplies) => ({
+      ...previousReplies,
+      [selectedInboxMessageId]: [
+        ...(previousReplies[selectedInboxMessageId] || []),
+        {
+          id: `${selectedInboxMessageId}-${sentAt}-${Math.random().toString(36).slice(2, 8)}`,
+          senderName: senderName || 'Admin',
+          senderEmail: senderEmail || '',
+          text: replyText,
+          sentAt,
+        },
+      ],
+    }));
+    markInboxMessageAsRead(selectedInboxMessageId);
+    setInboxReplyNotice('Reply saved in Inbox.');
+    setInboxReplyDraft('');
+    setIsInboxReplyComposerOpen(false);
+  };
+
+  const fetchContactMessages = async () => {
+    setIsLoadingInbox(true);
+    setInboxNotice('');
+    setInboxSourceDebug([]);
+    try {
+      const tableResults = await Promise.all(
+        [CONTACT_MESSAGE_TABLE].map(async (tableName) => {
+          try {
+            const primaryQuery = Promise.resolve(
+              supabase
+                .from(tableName)
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(2000)
+            );
+            const primary = await withRequestTimeout(
+              primaryQuery,
+              30000,
+              `Inbox request timeout (${tableName})`
+            );
+
+            if (!primary.error) {
+              return { tableName, data: primary.data || [], error: null as any };
+            }
+
+            const primaryMessage = `${primary.error?.message || ''}`.toLowerCase();
+            if (primaryMessage.includes('timeout') || (primaryMessage.includes('created_at') && primaryMessage.includes('does not exist'))) {
+              const retryQuery = Promise.resolve(
+                supabase
+                  .from(tableName)
+                  .select('*')
+                  .limit(2000)
+              );
+              const retry = await withRequestTimeout(
+                retryQuery,
+                15000,
+                `Inbox retry timeout (${tableName})`
+              );
+              if (!retry.error) {
+                return { tableName, data: retry.data || [], error: null as any };
+              }
+              return { tableName, data: [] as any[], error: retry.error };
+            }
+
+            return { tableName, data: [] as any[], error: primary.error };
+          } catch (tableError: any) {
+            return { tableName, data: [] as any[], error: tableError };
+          }
+        })
+      );
+
+      setInboxSourceDebug(
+        tableResults.map((item) => ({
+          table: item.tableName,
+          rows: Array.isArray(item.data) ? item.data.length : 0,
+          error: item.error
+            ? asCleanText(item.error?.message || item.error?.details || item.error?.hint || String(item.error))
+            : '',
+        }))
+      );
+
+      const successfulTables = tableResults
+        .filter((item) => !item.error)
+        .map((item) => item.tableName);
+      const latestError = tableResults.find((item) => item.error)?.error || null;
+
+      if (!successfulTables.length) {
+        throw latestError || new Error('Inbox source table is missing');
+      }
+
+      const mergedRows: ContactMessageItem[] = tableResults.flatMap((item) =>
+        (item.data || []).map((record: any, index: number) =>
+          normalizeContactMessageRecord(record, index, item.tableName)
+        )
+      );
+
+      const normalizedMessages = mergedRows
+        .map((row) => {
+          const resolvedName = getInboxSenderName(row);
+          return {
+            ...row,
+            name: resolvedName || null,
+          };
+        })
+        .filter(
+          (row: ContactMessageItem) =>
+            Boolean(
+              asCleanText(row.name || row.full_name) ||
+              asCleanText(row.email) ||
+              asCleanText(row.message)
+            )
+        )
+        .sort((a, b) => {
+          const first = new Date(a.created_at || '').getTime();
+          const second = new Date(b.created_at || '').getTime();
+          if (Number.isNaN(first) && Number.isNaN(second)) return 0;
+          if (Number.isNaN(first)) return 1;
+          if (Number.isNaN(second)) return -1;
+          return second - first;
+        });
+
+      setContactMessages(normalizedMessages);
+      setSelectedInboxMessageId((previousId) => {
+        if (previousId && normalizedMessages.some((row) => row.id === previousId)) {
+          return previousId;
+        }
+        return normalizedMessages[0]?.id || '';
+      });
+      setInboxNotice('');
+    } catch (error) {
+      console.error('Error fetching contact messages:', error);
+      const errorMessage = error instanceof Error ? error.message : '';
+      setInboxNotice(
+        errorMessage
+          ? `Unable to load inbox messages right now. (${errorMessage})`
+          : 'Unable to load inbox messages right now.'
+      );
+    } finally {
+      setIsLoadingInbox(false);
+    }
+  };
+
   const fetchApplications = async () => {
     try {
       const { data, error } = await supabase
@@ -1149,7 +1964,14 @@ const Admin: React.FC = () => {
         .map(normalizeApplicationRecord)
         .filter((application) => Boolean(application.first_name || application.last_name || application.email));
 
-      setApplications(normalizedApplications);
+      setApplications(
+        normalizedApplications.map((application) =>
+          hiredStatusOverrideIds.includes(application.id) &&
+          normalizeApplicationStatus(application.status) === 'accepted'
+            ? { ...application, status: 'hired' }
+            : application
+        )
+      );
     } catch (error) {
       console.error('Error fetching applications:', error);
     }
@@ -1179,6 +2001,107 @@ const Admin: React.FC = () => {
     setIsApplicantInterviewSaved(Boolean(selectedApplicant.interview_at));
     setApplicantInterviewSavedAt(selectedApplicant.interview_at || null);
   }, [selectedApplicant?.id, selectedApplicant?.interview_at]);
+
+  useEffect(() => {
+    if (!selectedApplicant?.id) {
+      setIsLoadingSelectedApplicantResumePoints(false);
+      return;
+    }
+
+    const currentStatus = normalizeApplicationStatus(selectedApplicant.status);
+    const shouldShowResumePoints = currentStatus === 'accepted' || currentStatus === 'hired';
+    if (!shouldShowResumePoints) {
+      setIsLoadingSelectedApplicantResumePoints(false);
+      return;
+    }
+
+    if (typeof applicantResumePointsById[selectedApplicant.id] === 'number') {
+      setIsLoadingSelectedApplicantResumePoints(false);
+      return;
+    }
+
+    let isCancelled = false;
+    const loadResumePoints = async () => {
+      setIsLoadingSelectedApplicantResumePoints(true);
+      try {
+        const sourceText = await getApplicantResumeSourceText(selectedApplicant);
+        const result = analyzeApplicantResumeByPoints(sourceText, selectedApplicant);
+        if (isCancelled) return;
+        setApplicantResumePointsById((prev) => ({
+          ...prev,
+          [selectedApplicant.id]: result.totalPoints,
+        }));
+      } catch (error) {
+        console.error('Error loading selected applicant resume points:', error);
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingSelectedApplicantResumePoints(false);
+        }
+      }
+    };
+
+    loadResumePoints();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedApplicant, applicantResumePointsById]);
+
+  useEffect(() => {
+    if (!contactMessages.length) {
+      if (selectedInboxMessageId) {
+        setSelectedInboxMessageId('');
+      }
+      return;
+    }
+
+    if (!contactMessages.some((messageItem) => messageItem.id === selectedInboxMessageId)) {
+      setSelectedInboxMessageId('');
+    }
+  }, [contactMessages, selectedInboxMessageId]);
+
+  useEffect(() => {
+    if (!selectedInboxMessageId) {
+      setInboxReplyDraft('');
+      setInboxReplyNotice('');
+      setIsInboxReplyComposerOpen(false);
+      setSelectedInboxReplyView(null);
+      return;
+    }
+    setInboxReplyDraft('');
+    setInboxReplyNotice('');
+  }, [selectedInboxMessageId]);
+
+  useEffect(() => {
+    if (!selectedProcessedApplicantId) return;
+    if (applications.some((application) => application.id === selectedProcessedApplicantId)) return;
+    setSelectedProcessedApplicantId('');
+    setProcessedApplicantAiAnalysis(null);
+    setProcessedApplicantAiNotice('');
+  }, [selectedProcessedApplicantId, applications]);
+
+  useEffect(() => {
+    if (!hiredStatusOverrideIds.length) return;
+    setApplications((previous) =>
+      previous.map((application) =>
+        hiredStatusOverrideIds.includes(application.id) &&
+        normalizeApplicationStatus(application.status) === 'accepted'
+          ? { ...application, status: 'hired' }
+          : application
+      )
+    );
+  }, [hiredStatusOverrideIds]);
+
+  useEffect(() => {
+    if (!isLoadingInbox) return;
+    const timer = window.setTimeout(() => {
+      setIsLoadingInbox(false);
+      setInboxNotice((previous) =>
+        previous || 'Inbox loading took too long. Please click refresh.'
+      );
+    }, 12000);
+    return () => window.clearTimeout(timer);
+  }, [isLoadingInbox]);
 
   const fetchProjectSubmissions = async () => {
     setIsLoadingProjectSubmissions(true);
@@ -1227,9 +2150,15 @@ const Admin: React.FC = () => {
     return 'intern';
   };
 
-  const normalizeApplicationStatus = (status?: string): 'pending' | 'accepted' | 'declined' | 'archived' => {
+  const normalizeApplicationStatus = (status?: string): 'pending' | 'accepted' | 'declined' | 'hired' | 'archived' => {
     const normalized = (status || '').toString().trim().toLowerCase();
-    if (normalized === 'accepted' || normalized === 'declined' || normalized === 'archived' || normalized === 'pending') {
+    if (
+      normalized === 'accepted' ||
+      normalized === 'declined' ||
+      normalized === 'hired' ||
+      normalized === 'archived' ||
+      normalized === 'pending'
+    ) {
       return normalized;
     }
     return 'pending';
@@ -1692,6 +2621,13 @@ const Admin: React.FC = () => {
           fetchProjectSubmissions();
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'inbox_messages' },
+        () => {
+          fetchContactMessages();
+        }
+      )
       .subscribe();
 
     return () => {
@@ -1711,6 +2647,9 @@ const Admin: React.FC = () => {
     }
     if (activeTab === 'Projects') {
       fetchProjectSubmissions();
+    }
+    if (activeTab === 'Inbox') {
+      fetchContactMessages();
     }
     if (activeTab === 'Settings') {
       if (settingsView === 'history') {
@@ -1776,6 +2715,9 @@ const Admin: React.FC = () => {
       }
       if (applicantActionMenuRef.current && !applicantActionMenuRef.current.contains(event.target as Node)) {
         setOpenApplicantActionMenuId(null);
+      }
+      if (processedApplicantStatusMenuRef.current && !processedApplicantStatusMenuRef.current.contains(event.target as Node)) {
+        setIsProcessedApplicantStatusMenuOpen(false);
       }
       if (dashboardTaskScopeMenuRef.current && !dashboardTaskScopeMenuRef.current.contains(event.target as Node)) {
         setIsDashboardTaskScopeMenuOpen(false);
@@ -2183,8 +3125,8 @@ const Admin: React.FC = () => {
     );
   };
 
-  const sendApplicationDecisionEmail = async (application: any, status: 'accepted' | 'declined') => {
-    const configuredKeys = Array.from(
+  const getConfiguredEmailJsKeys = () =>
+    Array.from(
       new Set(
         [
           (import.meta.env.VITE_EMAILJS_PUBLIC_KEY as string | undefined)?.trim(),
@@ -2193,49 +3135,28 @@ const Admin: React.FC = () => {
         ].filter((key): key is string => Boolean(key))
       )
     );
+
+  const sendEmailJsTemplate = async (templateId: string, templateParams: Record<string, any>) => {
+    const configuredKeys = getConfiguredEmailJsKeys();
     if (!configuredKeys.length) {
       throw new Error('Missing EmailJS public key');
     }
 
-    const templateId = status === 'accepted' ? EMAILJS_ACCEPT_TEMPLATE_ID : EMAILJS_DECLINE_TEMPLATE_ID;
-    const applicantName = `${application?.first_name || ''} ${application?.last_name || ''}`.trim() || 'Applicant';
-    const applicantEmail = (application?.email || '').toString().trim();
-    if (!applicantEmail) {
-      throw new Error('Applicant email is empty');
-    }
-    const decisionLabel = status === 'accepted' ? 'Accepted' : 'Declined';
-    const interviewDate = formatInterviewDateForEmail(application?.interview_at);
-    const interviewTime = formatInterviewTimeForEmail(application?.interview_at);
-    const interviewSchedule = formatInterviewSchedule(application?.interview_at);
+    const sanitizedTemplateParams = Object.fromEntries(
+      Object.entries(templateParams)
+        .filter(([key, value]) => EMAILJS_TEMPLATE_PARAM_KEY_REGEX.test(key) && value !== undefined && value !== null)
+        .map(([key, value]) => [
+          key,
+          typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+            ? value
+            : String(value),
+        ])
+    );
 
     const basePayload = {
       service_id: EMAILJS_SERVICE_ID,
       template_id: templateId,
-      template_params: {
-        name: applicantName,
-        title: getApplicantPositionValue(application) || 'Lifewood Position',
-        email: applicantEmail,
-        to_name: applicantName,
-        to_email: applicantEmail,
-        user_email: applicantEmail,
-        recipient: applicantEmail,
-        reply_to: applicantEmail,
-        applicant_name: applicantName,
-        applicant_email: applicantEmail,
-        project_applied: getApplicantPositionValue(application),
-        application_status: decisionLabel,
-        decision_message:
-          status === 'accepted'
-            ? `Congratulations ${applicantName}, your application has been accepted.`
-            : `Thank you ${applicantName} for applying. Your application was not selected this cycle.`,
-        decision_date: new Date().toLocaleDateString(),
-        interview_date: interviewDate || 'To be announced',
-        interview_time: interviewTime || 'To be announced',
-        interview_datetime: interviewSchedule || 'To be announced',
-        interview_schedule: interviewSchedule || 'To be announced',
-        schedule_date: interviewDate || 'To be announced',
-        schedule_time: interviewTime || 'To be announced',
-      },
+      template_params: sanitizedTemplateParams,
     };
 
     const sendRequest = async (payload: Record<string, any>) => {
@@ -2255,6 +3176,16 @@ const Admin: React.FC = () => {
         parsedError = jsonError?.message || jsonError?.text || parsedError;
       } catch (_) {
         // Keep raw text when JSON parsing fails.
+      }
+
+      const normalizedParsedError = parsedError.toLowerCase();
+      if (
+        normalizedParsedError.includes('dynamic variables are corrupted') ||
+        (normalizedParsedError.includes('template') && normalizedParsedError.includes('corrupted'))
+      ) {
+        throw new Error(
+          'EmailJS template has invalid dynamic variables. Use only letters, numbers, or underscore (example: {{project_name}}), and remove variables with spaces like {{projects Name}}.'
+        );
       }
 
       throw new Error(parsedError);
@@ -2287,9 +3218,182 @@ const Admin: React.FC = () => {
     throw new Error(errorMessage || 'EmailJS failed');
   };
 
+  const sendApplicationDecisionEmail = async (application: any, status: 'accepted' | 'declined') => {
+    const applicantName = `${application?.first_name || ''} ${application?.last_name || ''}`.trim() || 'Applicant';
+    const applicantEmail = (application?.email || '').toString().trim();
+    if (!applicantEmail) {
+      throw new Error('Applicant email is empty');
+    }
+
+    const titleValue =
+      (application?.project_applied || application?.position || getApplicantPositionValue(application) || 'Lifewood Position')
+        .toString()
+        .trim() || 'Lifewood Position';
+    const interviewDate = formatInterviewDateForEmail(application?.interview_at);
+    const interviewTime = formatInterviewTimeForEmail(application?.interview_at);
+    const interviewSchedule = formatInterviewSchedule(application?.interview_at);
+    const isAccepted = status === 'accepted';
+    const templateId = isAccepted ? EMAILJS_ACCEPT_TEMPLATE_ID : EMAILJS_DECLINE_TEMPLATE_ID;
+
+    const baseTemplateParams = {
+      name: applicantName,
+      title: titleValue,
+      position_applied: titleValue,
+      Position_Applied: titleValue,
+      projects_name: titleValue,
+      projectsName: titleValue,
+      project_name: titleValue,
+      email: applicantEmail,
+      to_name: applicantName,
+      to_email: applicantEmail,
+      user_email: applicantEmail,
+      recipient: applicantEmail,
+      reply_to: applicantEmail,
+      applicant_name: applicantName,
+      applicant_email: applicantEmail,
+      project_applied: titleValue,
+    };
+
+    if (isAccepted) {
+      await sendEmailJsTemplate(templateId, {
+        ...baseTemplateParams,
+        accepted: 'yes',
+        rejected: '',
+        accepted_flag: 'yes',
+        rejected_flag: '',
+        application_status: 'Accepted',
+        decision_message: `Congratulations ${applicantName}, your application has been accepted.`,
+        decision_date: new Date().toLocaleDateString(),
+        interview_date: interviewDate || 'To be announced',
+        interview_time: interviewTime || 'To be announced',
+        Date: interviewDate || 'To be announced',
+        Time: interviewTime || 'To be announced',
+        interview_datetime: interviewSchedule || 'To be announced',
+        interview_schedule: interviewSchedule || 'To be announced',
+        schedule_date: interviewDate || 'To be announced',
+        schedule_time: interviewTime || 'To be announced',
+      });
+      return;
+    }
+
+    await sendEmailJsTemplate(templateId, {
+      ...baseTemplateParams,
+      accepted: '',
+      rejected: 'yes',
+      accepted_flag: '',
+      rejected_flag: 'yes',
+      application_status: isAccepted ? 'Accepted' : 'Rejected',
+      decision_message: isAccepted
+        ? `Congratulations ${applicantName}, your application has been accepted.`
+        : `Thank you ${applicantName} for applying. Your application was not selected this cycle.`,
+      decision_date: new Date().toLocaleDateString(),
+    });
+  };
+
+  const sendProjectDecisionEmail = async (
+    submission: ProjectSubmissionItem,
+    decision: 'accepted' | 'declined'
+  ) => {
+    const recipientEmail = (submission?.email || '').toString().trim();
+    if (!recipientEmail) {
+      throw new Error('Project submitter email is empty');
+    }
+
+    const recipientName = (submission?.full_name || '').toString().trim() || 'Applicant';
+    const projectName = (submission?.project_name || '').toString().trim() || 'Submitted Project';
+    const isAccepted = decision === 'accepted';
+    const templateId = isAccepted ? EMAILJS_ACCEPT_TEMPLATE_ID : EMAILJS_DECLINE_TEMPLATE_ID;
+
+    await sendEmailJsTemplate(templateId, {
+      name: recipientName,
+      title: projectName,
+      accepted: isAccepted,
+      rejected: !isAccepted,
+      accepted_flag: isAccepted ? 'yes' : '',
+      rejected_flag: !isAccepted ? 'yes' : '',
+      projects_name: projectName,
+      projectsName: projectName,
+      project_name: projectName,
+      email: recipientEmail,
+      to_name: recipientName,
+      to_email: recipientEmail,
+      user_email: recipientEmail,
+      recipient: recipientEmail,
+      reply_to: recipientEmail,
+      applicant_name: recipientName,
+      applicant_email: recipientEmail,
+      project_applied: projectName,
+      application_status: isAccepted ? 'Accepted' : 'Rejected',
+      decision_message: isAccepted
+        ? `Congratulations ${recipientName}, your project submission was accepted.`
+        : `Thank you ${recipientName} for your submission. It was not selected this cycle.`,
+      decision_date: new Date().toLocaleDateString(),
+    });
+  };
+
   if (authLoading && !user) return null;
 
   if (!user) return null;
+
+  const handleCloseResumePreviewModal = () => {
+    resumeAnalysisRequestRef.current += 1;
+    setResumePreviewApplicant(null);
+    setIsAnalyzingResume(false);
+    setResumeAnalysisResult(null);
+    setResumeAnalysisNotice('');
+  };
+
+  const handleConfirmResumeAnalysis = () => {
+    if (!resumePreviewApplicant || !resumeAnalysisResult) return;
+    const applicantName = `${resumePreviewApplicant.first_name || ''} ${resumePreviewApplicant.last_name || ''}`
+      .replace(/\s+/g, ' ')
+      .trim() || 'Applicant';
+    setApplicantResumePointsById((prev) => ({
+      ...prev,
+      [resumePreviewApplicant.id]: resumeAnalysisResult.totalPoints,
+    }));
+    setApplicantActionNotice(
+      `Resume analysis confirmed for ${applicantName}: ${resumeAnalysisResult.totalPoints} points.`
+    );
+    handleCloseResumePreviewModal();
+  };
+
+  const handleOpenResumePreviewModal = async (application: AdminApplicationItem) => {
+    if (!application?.cv_url) {
+      setApplicantActionNotice('No resume file uploaded for this applicant.');
+      return;
+    }
+
+    const requestId = resumeAnalysisRequestRef.current + 1;
+    resumeAnalysisRequestRef.current = requestId;
+    setResumePreviewApplicant(application);
+    setResumeAnalysisResult(null);
+    setResumeAnalysisNotice('');
+    setIsAnalyzingResume(true);
+
+    try {
+      const sourceText = await getApplicantResumeSourceText(application);
+      const result = analyzeApplicantResumeByPoints(sourceText, application);
+      await new Promise((resolve) => window.setTimeout(resolve, 1400));
+
+      if (resumeAnalysisRequestRef.current !== requestId) return;
+      setResumeAnalysisResult(result);
+      setResumeAnalysisNotice('AI Analyze completed.');
+    } catch (error) {
+      console.error('Error analyzing applicant resume:', error);
+      if (resumeAnalysisRequestRef.current !== requestId) return;
+      const errorMessage = error instanceof Error ? error.message : '';
+      setResumeAnalysisNotice(
+        errorMessage
+          ? `AI Analyze failed. (${errorMessage})`
+          : 'AI Analyze failed for this resume.'
+      );
+    } finally {
+      if (resumeAnalysisRequestRef.current === requestId) {
+        setIsAnalyzingResume(false);
+      }
+    }
+  };
 
   const handleSaveApplicantInterviewSchedule = async () => {
     if (!selectedApplicant?.id) return;
@@ -2450,6 +3554,55 @@ const Admin: React.FC = () => {
     }
   };
 
+  const handleMarkApplicationAsHired = async (application: any) => {
+    if (!application?.id) return;
+
+    if (normalizeApplicationStatus(application.status) !== 'accepted') {
+      setApplicantActionNotice('Only accepted applicants can be marked as hired.');
+      return;
+    }
+
+    setApplicantRowActionId(application.id);
+    setApplicantActionNotice('');
+
+    try {
+      const { error } = await supabase
+        .from('applications')
+        .update({ status: 'hired' })
+        .eq('id', application.id);
+
+      if (error) {
+        if (isUnsupportedHiredStatusError(error)) {
+          setHiredStatusOverrideIds((previous) =>
+            previous.includes(application.id) ? previous : [...previous, application.id]
+          );
+          setApplications((prev) =>
+            prev.map((app) => (app.id === application.id ? { ...app, status: 'hired' } : app))
+          );
+          setSelectedApplicant(null);
+          setOpenApplicantActionMenuId(null);
+          showApplicantSuccessPopup('Applicant Hired', `${application?.first_name || ''} ${application?.last_name || ''}`.trim() || 'Applicant');
+          setApplicantActionNotice('');
+          return;
+        }
+        throw error;
+      }
+
+      setApplications((prev) =>
+        prev.map((app) => (app.id === application.id ? { ...app, status: 'hired' } : app))
+      );
+      setSelectedApplicant(null);
+      setOpenApplicantActionMenuId(null);
+      showApplicantSuccessPopup('Applicant Hired', `${application?.first_name || ''} ${application?.last_name || ''}`.trim() || 'Applicant');
+      setApplicantActionNotice('Applicant marked as hired.');
+    } catch (error) {
+      console.error('Error marking applicant as hired:', error);
+      setApplicantActionNotice('Unable to mark applicant as hired right now.');
+    } finally {
+      setApplicantRowActionId(null);
+    }
+  };
+
   const handleArchiveApplication = async (application: any) => {
     if (!application?.id) return;
 
@@ -2535,12 +3688,167 @@ const Admin: React.FC = () => {
     }
   };
 
+  const handleAnalyzeProcessedApplicant = async (application: AdminApplicationItem) => {
+    if (!application?.id) return;
+
+    setSelectedProcessedApplicantId(application.id);
+    setProcessedApplicantAiNotice('');
+
+    const cachedResult = processedApplicantAiCache[application.id];
+    if (cachedResult) {
+      setProcessedApplicantAiAnalysis(cachedResult);
+      return;
+    }
+
+    setIsLoadingProcessedApplicantAi(true);
+    try {
+      const sourceText = await getApplicantResumeSourceText(application);
+      const analysis = analyzeApplicantResumeByPoints(sourceText, application);
+      const skills = extractDetectedResumeSkills(sourceText);
+      const applicantName =
+        `${asCleanText(application.first_name)} ${asCleanText(application.last_name)}`.trim() || 'Applicant';
+
+      const result: ProcessedApplicantAiAnalysis = {
+        applicantId: application.id,
+        applicantName,
+        totalPoints: analysis.totalPoints,
+        maxPoints: analysis.maxPoints,
+        skills,
+        sections: analysis.sections,
+        analyzedAt: analysis.analyzedAt,
+      };
+
+      setProcessedApplicantAiCache((prev) => ({
+        ...prev,
+        [application.id]: result,
+      }));
+      setProcessedApplicantAiAnalysis(result);
+      setApplicantResumePointsById((prev) => ({
+        ...prev,
+        [application.id]: analysis.totalPoints,
+      }));
+      if (!asCleanText(application.cv_url)) {
+        setProcessedApplicantAiNotice('No CV file found. Showing AI analysis from submitted profile details.');
+      }
+    } catch (error) {
+      console.error('Error running AI Lifewood analysis for processed applicant:', error);
+      setProcessedApplicantAiAnalysis(null);
+      setProcessedApplicantAiNotice('Unable to analyze this applicant right now.');
+    } finally {
+      setIsLoadingProcessedApplicantAi(false);
+    }
+  };
+
+  const buildProcessedApplicantSummary = (
+    analysis: ProcessedApplicantAiAnalysis,
+    status: 'pending' | 'accepted' | 'declined' | 'hired' | 'archived' | null
+  ) => {
+    const applicantName = analysis.applicantName || 'This applicant';
+    const topSkills = analysis.skills.slice(0, 3);
+    const skillSummary = topSkills.length
+      ? `key skills include ${topSkills.join(', ')}`
+      : 'skill keywords are limited in the CV text';
+    const sentenceOne = `${applicantName} scored ${analysis.totalPoints}/${analysis.maxPoints} in AI Lifewood Analysis, and ${skillSummary}.`;
+
+    let sentenceTwo = `${applicantName} is currently under processed review.`;
+    if (status === 'hired') {
+      sentenceTwo = `${applicantName} is Hired.`;
+    } else if (status === 'accepted') {
+      sentenceTwo = `${applicantName} is Accepted and ready for hiring review.`;
+    } else if (status === 'declined') {
+      sentenceTwo = `${applicantName} is Declined based on the current evaluation.`;
+    } else if (status === 'archived') {
+      sentenceTwo = `${applicantName} is currently Archived.`;
+    }
+
+    return [sentenceOne, sentenceTwo];
+  };
+
   const evaluationCandidates = getEvaluationCandidates();
   const selectedEvaluationUser =
     evaluationCandidates.find((candidate) => candidate.id === selectedEvaluationUserId) || null;
   const selectedEvaluationAnalytics = selectedEvaluationUser ? getEvaluationAnalytics(selectedEvaluationUser) : null;
+  const filteredInboxMessages = contactMessages.filter((messageItem) => {
+    const query = inboxSearchTerm.trim().toLowerCase();
+    if (!query) return true;
+    const name = getInboxSenderName(messageItem).toLowerCase();
+    return name.includes(query);
+  });
+  const selectedInboxMessage =
+    contactMessages.find((messageItem) => messageItem.id === selectedInboxMessageId) || null;
+  const selectedInboxReplies = selectedInboxMessageId ? (inboxReplies[selectedInboxMessageId] || []) : [];
+  const currentAdminName = asCleanText(
+    profile?.full_name ||
+    user?.user_metadata?.full_name ||
+    user?.user_metadata?.name ||
+    user?.email?.split('@')[0] ||
+    'Admin'
+  );
+  const currentAdminEmail = asCleanText(user?.email || profile?.email).toLowerCase();
+  const unreadInboxCount = contactMessages.reduce(
+    (total, messageItem) => (readInboxIds.includes(messageItem.id) ? total : total + 1),
+    0
+  );
   const pendingApplications = applications.filter((app) => normalizeApplicationStatus(app.status) === 'pending');
+  const declinedApplications = applications.filter((app) => normalizeApplicationStatus(app.status) === 'declined');
+  const acceptedApplications = applications.filter((app) => normalizeApplicationStatus(app.status) === 'accepted');
+  const selectedApplicantStatus = selectedApplicant ? normalizeApplicationStatus(selectedApplicant.status) : 'pending';
+  const isPendingApplicantModal = selectedApplicantStatus === 'pending';
+  const applicantModalLabelClass = isPendingApplicantModal
+    ? (darkMode
+        ? "font-['Montserrat'] text-xs font-extrabold uppercase tracking-[0.18em] mb-1.5 text-emerald-300"
+        : "font-['Montserrat'] text-xs font-extrabold uppercase tracking-[0.18em] mb-1.5 text-emerald-700")
+    : (darkMode
+        ? 'text-[10px] font-bold uppercase tracking-widest mb-1 text-slate-500'
+        : 'text-[10px] font-bold uppercase tracking-widest mb-1 text-gray-400');
+  const applicantModalValueClass = isPendingApplicantModal
+    ? (darkMode
+        ? "font-['Montserrat'] text-[17px] font-semibold text-slate-100"
+        : "font-['Montserrat'] text-[17px] font-semibold text-gray-900")
+    : 'text-sm font-medium';
+  const applicantModalFieldCardClass = isPendingApplicantModal
+    ? (darkMode
+        ? 'rounded-2xl border border-emerald-500/30 bg-slate-900/65 px-4 py-3 shadow-[0_20px_35px_-26px_rgba(16,185,129,0.75),0_10px_18px_-12px_rgba(0,0,0,0.65)]'
+        : 'rounded-2xl border border-emerald-200 bg-white px-4 py-3 shadow-[0_20px_35px_-26px_rgba(16,185,129,0.55),0_10px_18px_-12px_rgba(15,23,42,0.45)]')
+    : '';
+  const selectedApplicantResumePoints = selectedApplicant ? applicantResumePointsById[selectedApplicant.id] : undefined;
+  const isSelectedApplicantProcessed = selectedApplicantStatus === 'accepted' || selectedApplicantStatus === 'hired';
   const reviewedApplications = applications.filter((app) => normalizeApplicationStatus(app.status) !== 'pending');
+  const filteredProcessedApplicants = reviewedApplications
+    .filter((app) => {
+      const normalizedStatus = normalizeApplicationStatus(app.status);
+      if (processedApplicantStatusFilter !== 'all' && normalizedStatus !== processedApplicantStatusFilter) {
+        return false;
+      }
+      const query = processedApplicantNameSearch.trim().toLowerCase();
+      if (!query) return true;
+      const fullName = `${asCleanText(app.first_name)} ${asCleanText(app.last_name)}`.trim().toLowerCase();
+      return fullName.includes(query);
+    })
+    .sort((a, b) => {
+      const firstName = `${asCleanText(a.first_name)} ${asCleanText(a.last_name)}`.trim().toLowerCase();
+      const secondName = `${asCleanText(b.first_name)} ${asCleanText(b.last_name)}`.trim().toLowerCase();
+      return firstName.localeCompare(secondName);
+    });
+  const selectedProcessedApplicant =
+    reviewedApplications.find((application) => application.id === selectedProcessedApplicantId) || null;
+  const selectedProcessedApplicantStatus = selectedProcessedApplicant
+    ? normalizeApplicationStatus(selectedProcessedApplicant.status)
+    : null;
+  const processedApplicantSummarySentences = processedApplicantAiAnalysis
+    ? buildProcessedApplicantSummary(processedApplicantAiAnalysis, selectedProcessedApplicantStatus)
+    : null;
+  const processedApplicantStatusLabel =
+    processedApplicantStatusFilter === 'accepted'
+      ? 'Accepted'
+      : processedApplicantStatusFilter === 'declined'
+        ? 'Decline'
+        : 'All';
+  const processedApplicantStatusOptions: Array<{ value: 'all' | 'accepted' | 'declined'; label: string }> = [
+    { value: 'all', label: 'All' },
+    { value: 'accepted', label: 'Accepted' },
+    { value: 'declined', label: 'Decline' },
+  ];
   const evaluationInsight = selectedEvaluationUser ? getAiInsight(selectedEvaluationUser) : null;
   const approvedInternProfiles = allProfiles.filter((p) => p?.is_approved === true && isInternLikeRole(getNormalizedRole(p)));
   const approvedEmployeeProfiles = allProfiles.filter((p) => p?.is_approved === true && isEmployeeLikeRole(getNormalizedRole(p)));
@@ -3064,14 +4372,25 @@ const Admin: React.FC = () => {
             : submission
         )
       );
-      const decisionMessage = decision === 'accepted'
-        ? 'Project submission accepted successfully.'
-        : 'Project submission declined successfully.';
-      setProjectSubmissionNotice(
-        updatedTable === 'project_submission'
-          ? `${decisionMessage} (legacy table)`
-          : decisionMessage
-      );
+      let emailNotice = '';
+      try {
+        await sendProjectDecisionEmail(
+          { ...selectedProjectSubmission, status: decision, source_table: updatedTable },
+          decision
+        );
+      } catch (emailError) {
+        const errorMessage = emailError instanceof Error ? emailError.message : '';
+        emailNotice = errorMessage
+          ? ` but decision email was not sent. (${errorMessage})`
+          : ' but decision email was not sent.';
+      }
+
+      const decisionMessage =
+        decision === 'accepted'
+          ? 'Project submission accepted successfully.'
+          : 'Project submission declined successfully.';
+      const tableSuffix = updatedTable === 'project_submission' ? ' (legacy table)' : '';
+      setProjectSubmissionNotice(`${decisionMessage}${tableSuffix}${emailNotice}`);
       if (decision === 'declined' && activeTab === 'Settings' && settingsView === 'history') {
         fetchSettingsHistory();
       }
@@ -3213,6 +4532,7 @@ const Admin: React.FC = () => {
     { icon: '\u{1F4C8}', label: 'Reports' },
     { icon: '\u{1F4C1}', label: 'Projects' },
     { icon: '\u{1F4E9}', label: 'Applicants' },
+    { icon: '\u{1F4EC}', label: 'Inbox' },
     { icon: '\u{1F465}', label: 'Manage Users' },
   ];
 
@@ -3338,6 +4658,13 @@ const Admin: React.FC = () => {
                   >
                     {renderMenuIcon(item)}
                     {!isSidebarCollapsed && <span className="text-sm font-medium">{item.label}</span>}
+                    {!isSidebarCollapsed && item.label === 'Inbox' && unreadInboxCount > 0 ? (
+                      <span className={`ml-auto min-w-5 h-5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
+                        darkMode ? 'bg-emerald-500/25 text-emerald-200' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {unreadInboxCount}
+                      </span>
+                    ) : null}
                   </button>
                 </li>
               ))}
@@ -5201,6 +6528,41 @@ const Admin: React.FC = () => {
               )}
             </AnimatePresence>
 
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className={`rounded-[32px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:border-orange-500/40' : 'bg-white border-black/5 hover:border-orange-500/20'}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-orange-500/10 text-orange-300' : 'bg-orange-50 text-orange-600'}`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2v6"/><path d="M14 2v6"/><path d="M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M9 16h6"/></svg>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-orange-300 bg-orange-500/20' : 'text-orange-600 bg-orange-50'}`}>Awaiting</span>
+                </div>
+                <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Pending Applicants</p>
+                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{pendingApplications.length}</h3>
+              </div>
+
+              <div className={`rounded-[32px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:border-red-500/40' : 'bg-white border-black/5 hover:border-red-500/20'}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-red-500/10 text-red-300' : 'bg-red-50 text-red-600'}`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-red-300 bg-red-500/20' : 'text-red-600 bg-red-50'}`}>Decline</span>
+                </div>
+                <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Decline Applicants</p>
+                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{declinedApplications.length}</h3>
+              </div>
+
+              <div className={`rounded-[32px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:border-emerald-500/40' : 'bg-white border-black/5 hover:border-emerald-500/20'}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-emerald-500/10 text-emerald-300' : 'bg-emerald-50 text-emerald-600'}`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-emerald-300 bg-emerald-500/20' : 'text-emerald-600 bg-emerald-50'}`}>Accepted</span>
+                </div>
+                <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Accepted Applicants</p>
+                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{acceptedApplications.length}</h3>
+              </div>
+            </div>
+
             <div className={`rounded-[40px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
               <div className="flex items-center justify-between mb-6">
                 <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Pending Applicants</h3>
@@ -5232,7 +6594,7 @@ const Admin: React.FC = () => {
                           <button
                             onClick={() => setSelectedApplicant(app)}
                             title="Review application and choose Accept or Decline"
-                            className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full transition-all ${darkMode ? 'bg-orange-500/10 text-orange-300 hover:bg-orange-500/20 hover:scale-105' : 'bg-orange-50 text-orange-600 hover:scale-105'}`}
+                            className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-none transition-all ${darkMode ? 'bg-orange-500/10 text-orange-300 hover:bg-orange-500/20 hover:scale-105' : 'bg-orange-50 text-orange-600 hover:scale-105'}`}
                           >
                             pending
                           </button>
@@ -5250,11 +6612,101 @@ const Admin: React.FC = () => {
             </div>
 
             <div className={`rounded-[40px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
-              <div className="flex items-center justify-between mb-6">
-                <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Processed Applicants</h3>
-                <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
-                  {reviewedApplications.length} records
-                </span>
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-6">
+                <div className="flex items-center gap-2">
+                  <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Processed Applicants</h3>
+                  <div className="relative" ref={processedApplicantStatusMenuRef}>
+                    <button
+                      type="button"
+                      onClick={() => setIsProcessedApplicantStatusMenuOpen((prev) => !prev)}
+                      className={`h-10 min-w-[155px] rounded-xl border pl-3 pr-3 text-xs font-bold uppercase tracking-widest text-left inline-flex items-center gap-2 focus:outline-none ${
+                        darkMode
+                          ? 'bg-slate-900 border-emerald-500/40 text-emerald-300'
+                          : 'bg-white border-emerald-300 text-emerald-700'
+                      }`}
+                      title="Filter processed applicants by status"
+                    >
+                      <span>{processedApplicantStatusLabel}</span>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className={`ml-auto shrink-0 transition-transform ${
+                          isProcessedApplicantStatusMenuOpen ? 'rotate-180' : ''
+                        }`}
+                      >
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </button>
+                    <AnimatePresence>
+                      {isProcessedApplicantStatusMenuOpen ? (
+                        <motion.div
+                          initial={{ opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={{ duration: 0.14 }}
+                          className={`absolute top-[calc(100%+6px)] left-0 z-30 min-w-[155px] rounded-xl border overflow-hidden shadow-lg ${
+                            darkMode ? 'bg-slate-900 border-emerald-500/30' : 'bg-white border-gray-200'
+                          }`}
+                        >
+                          {processedApplicantStatusOptions.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                setProcessedApplicantStatusFilter(option.value);
+                                setIsProcessedApplicantStatusMenuOpen(false);
+                              }}
+                              className={`w-full text-left px-3 py-2 text-xs font-bold uppercase tracking-widest transition-colors ${
+                                processedApplicantStatusFilter === option.value
+                                  ? darkMode
+                                    ? 'bg-emerald-500/20 text-emerald-200'
+                                    : 'bg-emerald-50 text-emerald-700'
+                                  : darkMode
+                                    ? 'text-emerald-300 hover:bg-slate-800'
+                                    : 'text-emerald-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 lg:ml-auto">
+                  <div className={`group flex items-center h-10 rounded-xl border overflow-hidden transition-all ${
+                    darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'
+                  }`}>
+                    <div className={`w-10 h-10 inline-flex items-center justify-center ${darkMode ? 'text-slate-300' : 'text-gray-500'}`} title="Search by name">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.3-4.3"/>
+                      </svg>
+                    </div>
+                    <input
+                      type="text"
+                      value={processedApplicantNameSearch}
+                      onChange={(e) => setProcessedApplicantNameSearch(e.target.value)}
+                      placeholder="Search name..."
+                      className={`w-0 px-0 opacity-0 group-hover:w-44 group-hover:px-3 group-hover:opacity-100 focus:w-44 focus:px-3 focus:opacity-100 transition-all duration-200 text-sm h-10 border-0 focus:outline-none ${
+                        darkMode ? 'bg-slate-900 text-slate-100 placeholder:text-slate-500' : 'bg-white text-gray-900 placeholder:text-gray-400'
+                      }`}
+                    />
+                  </div>
+
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                    {filteredProcessedApplicants.length} records
+                  </span>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -5265,55 +6717,90 @@ const Admin: React.FC = () => {
                       <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Project Applied For</th>
                       <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Date</th>
                       <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Status</th>
-                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest text-right ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Action</th>
+                      <th className={`py-4 pl-2 w-[72px] text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {reviewedApplications.map((app) => (
-                      <tr key={app.id} className={`border-b transition-colors ${darkMode ? 'border-slate-700' : 'border-black/5'} [&>td]:transition-colors [&:hover>td]:bg-[#f5eedb]`}>
+                    {filteredProcessedApplicants.map((app) => (
+                      <tr
+                        key={app.id}
+                        onClick={() => handleAnalyzeProcessedApplicant(app)}
+                        className={`border-b transition-colors cursor-pointer ${darkMode ? 'border-slate-700' : 'border-black/5'} [&>td]:transition-colors [&:hover>td]:bg-[#f5eedb] ${
+                          selectedProcessedApplicantId === app.id ? (darkMode ? '[&>td]:bg-emerald-500/10' : '[&>td]:bg-emerald-50/80') : ''
+                        }`}
+                      >
                         <td className={`py-4 font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{app.first_name} {app.last_name}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.email}</td>
                         <td className="py-4 text-sm font-bold text-lw-green">{getApplicantPositionLabel(app)}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>{new Date(app.updated_at || app.created_at).toLocaleDateString()}</td>
                         <td className="py-4">
-                          <span
-                            className={`inline-flex text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full ${
-                              normalizeApplicationStatus(app.status) === 'accepted'
-                                ? darkMode
-                                  ? 'bg-emerald-500/10 text-emerald-300'
-                                  : 'bg-emerald-50 text-emerald-600'
-                                : normalizeApplicationStatus(app.status) === 'declined'
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-none ${
+                                normalizeApplicationStatus(app.status) === 'accepted'
                                   ? darkMode
-                                    ? 'bg-red-500/10 text-red-300'
-                                    : 'bg-red-50 text-red-600'
-                                  : darkMode
-                                    ? 'bg-slate-700 text-slate-300'
-                                    : 'bg-gray-100 text-gray-600'
-                            }`}
-                          >
-                            {normalizeApplicationStatus(app.status)}
-                          </span>
+                                    ? 'bg-emerald-500/10 text-emerald-300'
+                                    : 'bg-emerald-50 text-emerald-600'
+                                  : normalizeApplicationStatus(app.status) === 'declined'
+                                    ? darkMode
+                                      ? 'bg-red-500/10 text-red-300'
+                                      : 'bg-red-50 text-red-600'
+                                    : normalizeApplicationStatus(app.status) === 'hired'
+                                      ? darkMode
+                                        ? 'bg-blue-500/20 text-blue-200'
+                                        : 'bg-blue-100 text-blue-700'
+                                      : darkMode
+                                        ? 'bg-slate-700 text-slate-300'
+                                        : 'bg-gray-100 text-gray-600'
+                              }`}
+                            >
+                              {normalizeApplicationStatus(app.status)}
+                            </span>
+                            {normalizeApplicationStatus(app.status) === 'accepted' ? (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedApplicant(app);
+                                }}
+                                className={`inline-flex text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-none transition-colors ${
+                                  darkMode
+                                    ? 'bg-orange-500/10 text-orange-300 hover:bg-orange-500/20'
+                                    : 'bg-orange-50 text-orange-600 hover:bg-orange-100'
+                                }`}
+                                title="View accepted applicant schedule and resume points"
+                              >
+                                View
+                              </button>
+                            ) : null}
+                          </div>
                         </td>
-                        <td className="py-4 text-right">
+                        <td className="py-4 pl-2">
                           <div className="relative inline-flex" ref={openApplicantActionMenuId === app.id ? applicantActionMenuRef : null}>
                             <button
                               type="button"
-                              onClick={() => setOpenApplicantActionMenuId((prev) => (prev === app.id ? null : app.id))}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setOpenApplicantActionMenuId((prev) => (prev === app.id ? null : app.id));
+                              }}
                               disabled={applicantRowActionId === app.id}
                               title="More actions"
-                              className={`w-8 h-8 rounded-full border inline-flex items-center justify-center transition-colors disabled:opacity-50 ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-gray-200 text-gray-500 hover:bg-gray-100'}`}
+                              className={`w-7 h-7 rounded-full border inline-flex items-center justify-center transition-colors disabled:opacity-50 ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-gray-200 text-gray-500 hover:bg-gray-100'}`}
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="8" r="1"/>
                                 <circle cx="12" cy="12" r="1"/>
-                                <circle cx="12" cy="5" r="1"/>
-                                <circle cx="12" cy="19" r="1"/>
+                                <circle cx="12" cy="16" r="1"/>
                               </svg>
                             </button>
                             {openApplicantActionMenuId === app.id && (
                               <div className={`absolute right-full mr-2 top-1/2 -translate-y-1/2 w-32 rounded-xl border shadow-xl z-20 p-1 ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}>
                                 <button
                                   type="button"
-                                  onClick={() => handleArchiveApplication(app)}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleArchiveApplication(app);
+                                  }}
                                   disabled={applicantRowActionId === app.id || normalizeApplicationStatus(app.status) === 'archived'}
                                   className={`w-full text-left px-3 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 ${
                                     darkMode
@@ -5325,7 +6812,10 @@ const Admin: React.FC = () => {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleDeleteApplication(app)}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleDeleteApplication(app);
+                                  }}
                                   disabled={applicantRowActionId === app.id}
                                   className={`w-full text-left px-3 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 ${darkMode ? 'text-red-300 hover:bg-red-500/10' : 'text-red-600 hover:bg-red-50'}`}
                                 >
@@ -5337,13 +6827,55 @@ const Admin: React.FC = () => {
                         </td>
                       </tr>
                     ))}
-                    {reviewedApplications.length === 0 && (
+                    {filteredProcessedApplicants.length === 0 && (
                       <tr>
                         <td colSpan={6} className={`py-12 text-center italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>No processed applications yet</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
+              </div>
+
+              <div className={`mt-6 rounded-[28px] border p-5 ${darkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-gray-50 border-gray-200'}`}>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                  <div>
+                    <h4 className={`text-lg font-bold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>AI Lifewood Analysis</h4>
+                    <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                      Click a row in Processed Applicants to generate a 2-sentence AI summary.
+                    </p>
+                  </div>
+                  {selectedProcessedApplicant ? (
+                    <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-slate-800 text-slate-200' : 'bg-white text-gray-700 border border-gray-200'}`}>
+                      {`${selectedProcessedApplicant.first_name || ''} ${selectedProcessedApplicant.last_name || ''}`.replace(/\s+/g, ' ').trim() || 'Selected applicant'}
+                    </span>
+                  ) : null}
+                </div>
+
+                {isLoadingProcessedApplicantAi ? (
+                  <div className="py-8 flex items-center gap-3">
+                    <span className="inline-block w-5 h-5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+                    <p className={`text-sm font-medium ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>Analyzing CV with AI Lifewood...</p>
+                  </div>
+                ) : processedApplicantAiAnalysis && processedApplicantSummarySentences ? (
+                  <div className={`rounded-2xl border p-4 ${darkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-white border-gray-200'}`}>
+                    <p className={`text-sm leading-relaxed ${darkMode ? 'text-slate-200' : 'text-gray-800'}`}>
+                      {processedApplicantSummarySentences[0]}
+                    </p>
+                    <p className={`text-sm leading-relaxed mt-2 font-semibold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                      {processedApplicantSummarySentences[1]}
+                    </p>
+                  </div>
+                ) : (
+                  <p className={`py-8 text-sm italic ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                    Select one processed applicant row to run AI Lifewood analysis.
+                  </p>
+                )}
+
+                {processedApplicantAiNotice ? (
+                  <p className={`mt-3 text-xs font-semibold ${processedApplicantAiNotice.toLowerCase().includes('unable') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-700')}`}>
+                    {processedApplicantAiNotice}
+                  </p>
+                ) : null}
               </div>
             </div>
 
@@ -5358,16 +6890,46 @@ const Admin: React.FC = () => {
                     onClick={() => setSelectedApplicant(null)}
                     className="absolute inset-0 bg-black/60 backdrop-blur-sm"
                   />
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.98, y: 120 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                    className={`relative w-full max-w-2xl rounded-[32px] p-8 shadow-2xl max-h-[90vh] overflow-y-auto ${darkMode ? 'bg-slate-800 text-slate-200' : 'bg-white text-gray-900'}`}
+                    exit={{ opacity: 0, scale: 0.98, y: 120 }}
+                    transition={{ type: 'spring', stiffness: 240, damping: 24, mass: 0.9 }}
+                    className={`relative w-full max-w-3xl rounded-[34px] p-8 shadow-2xl max-h-[90vh] overflow-y-auto ${
+                      isPendingApplicantModal
+                        ? (darkMode
+                            ? 'bg-gradient-to-br from-slate-800 via-slate-800 to-slate-900 border border-emerald-500/40 text-slate-100 shadow-[0_38px_72px_-34px_rgba(16,185,129,0.65),0_18px_42px_-28px_rgba(15,23,42,0.92)]'
+                            : 'bg-white border border-emerald-200 text-gray-900 shadow-[0_38px_72px_-34px_rgba(16,185,129,0.55),0_18px_42px_-28px_rgba(15,23,42,0.55)]')
+                        : (darkMode ? 'bg-slate-800 text-slate-200' : 'bg-white text-gray-900')
+                    }`}
                   >
+                    {isPendingApplicantModal ? (
+                      <div className={`mb-7 rounded-[24px] border px-6 py-5 ${
+                        darkMode
+                          ? 'bg-gradient-to-br from-emerald-500/15 via-slate-900/80 to-emerald-900/15 border-emerald-400/35 shadow-[0_20px_35px_-24px_rgba(16,185,129,0.75)]'
+                          : 'bg-gradient-to-br from-white to-emerald-50 border-emerald-300 shadow-[0_18px_32px_-24px_rgba(16,185,129,0.7)]'
+                      }`}>
+                        <h4 className={`font-['Montserrat'] text-[30px] leading-tight font-extrabold ${
+                          darkMode ? 'text-emerald-300' : 'text-emerald-800'
+                        }`}>
+                          Pending Applicant Review
+                        </h4>
+                        <p className={`font-['Montserrat'] mt-2 text-[15px] font-semibold ${
+                          darkMode ? 'text-slate-200' : 'text-gray-700'
+                        }`}>
+                          Review applicant details, set interview schedule, and finalize your approval decision.
+                        </p>
+                      </div>
+                    ) : null}
+
                     <div className="flex justify-between items-start mb-8">
                       <div>
-                        <h3 className="text-2xl font-bold mb-1">{selectedApplicant.first_name} {selectedApplicant.last_name}</h3>
-                        <p className={`text-sm font-medium ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>{getApplicantPositionLabel(selectedApplicant)}</p>
+                        <h3 className={`${isPendingApplicantModal ? "font-['Montserrat'] text-3xl font-extrabold mb-1" : 'text-2xl font-bold mb-1'}`}>
+                          {selectedApplicant.first_name} {selectedApplicant.last_name}
+                        </h3>
+                        <p className={`${isPendingApplicantModal ? "font-['Montserrat'] text-base font-bold" : 'text-sm font-medium'} ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                          {getApplicantPositionLabel(selectedApplicant)}
+                        </p>
                       </div>
                       <button 
                         onClick={() => setSelectedApplicant(null)}
@@ -5377,85 +6939,90 @@ const Admin: React.FC = () => {
                       </button>
                     </div>
 
-                    <div className="space-y-6 mb-10">
+                    <div className="space-y-7 mb-10">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <div>
-                          <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Email</p>
-                          <p className="text-sm font-medium">{selectedApplicant.email || 'N/A'}</p>
+                        <div className={applicantModalFieldCardClass}>
+                          <p className={applicantModalLabelClass}>Email</p>
+                          <p className={applicantModalValueClass}>{selectedApplicant.email || 'N/A'}</p>
                         </div>
-                        <div>
-                          <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Phone</p>
-                          <p className="text-sm font-medium">{selectedApplicant.phone || 'Not provided'}</p>
+                        <div className={applicantModalFieldCardClass}>
+                          <p className={applicantModalLabelClass}>Phone</p>
+                          <p className={applicantModalValueClass}>{selectedApplicant.phone || 'Not provided'}</p>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <div>
-                          <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Project Applied For</p>
-                          <p className="text-sm font-medium">{getApplicantPositionLabel(selectedApplicant)}</p>
+                        <div className={applicantModalFieldCardClass}>
+                          <p className={applicantModalLabelClass}>Project Applied For</p>
+                          <p className={applicantModalValueClass}>{getApplicantPositionLabel(selectedApplicant)}</p>
                         </div>
-                        <div>
-                          <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Age</p>
-                          <p className="text-sm font-medium">{selectedApplicant.age ?? 'N/A'}</p>
+                        <div className={applicantModalFieldCardClass}>
+                          <p className={applicantModalLabelClass}>Age</p>
+                          <p className={applicantModalValueClass}>{selectedApplicant.age ?? 'N/A'}</p>
                         </div>
-                        <div>
-                          <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Degree / Field</p>
-                          <p className="text-sm font-medium">{selectedApplicant.degree || 'N/A'}</p>
+                        <div className={applicantModalFieldCardClass}>
+                          <p className={applicantModalLabelClass}>Degree / Field</p>
+                          <p className={applicantModalValueClass}>{selectedApplicant.degree || 'N/A'}</p>
                         </div>
-                        <div>
-                          <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Submitted</p>
-                          <p className="text-sm font-medium">
+                        <div className={applicantModalFieldCardClass}>
+                          <p className={applicantModalLabelClass}>Submitted</p>
+                          <p className={applicantModalValueClass}>
                             {selectedApplicant.created_at ? new Date(selectedApplicant.created_at).toLocaleString() : 'N/A'}
                           </p>
                         </div>
                       </div>
 
-                      <div>
-                        <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Relevant Experience</p>
-                        <p className={`text-sm leading-relaxed ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>
+                      <div className={applicantModalFieldCardClass}>
+                        <p className={applicantModalLabelClass}>Relevant Experience</p>
+                        <p className={`${isPendingApplicantModal ? "font-['Montserrat'] text-[16px] font-medium leading-relaxed" : 'text-sm leading-relaxed'} ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>
                           {selectedApplicant.experience || 'N/A'}
                         </p>
                       </div>
 
-                      <div>
-                        <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Portfolio</p>
+                      <div className={applicantModalFieldCardClass}>
+                        <p className={applicantModalLabelClass}>Portfolio</p>
                         {selectedApplicant.portfolio_url ? (
                           <a 
                             href={selectedApplicant.portfolio_url} 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="text-sm font-medium text-emerald-500 hover:underline break-all"
+                            className={`${isPendingApplicantModal ? "font-['Montserrat'] text-[16px] font-semibold" : 'text-sm font-medium'} text-emerald-500 hover:underline break-all`}
                           >
                             {selectedApplicant.portfolio_url}
                           </a>
                         ) : (
-                          <p className="text-sm font-medium">N/A</p>
+                          <p className={applicantModalValueClass}>N/A</p>
                         )}
                       </div>
 
-                      <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-gray-50 border-gray-100'}`}>
+                      <div className={`p-5 rounded-[24px] border ${
+                        isPendingApplicantModal
+                          ? (darkMode
+                              ? 'bg-slate-900/70 border-emerald-500/35 shadow-[0_18px_36px_-24px_rgba(16,185,129,0.75)]'
+                              : 'bg-white border-emerald-200 shadow-[0_18px_36px_-24px_rgba(16,185,129,0.55)]')
+                          : (darkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-gray-50 border-gray-100')
+                      }`}>
                         <div className="flex items-center justify-between gap-4">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
                               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                             </div>
                             <div>
-                              <p className="text-sm font-bold">Curriculum Vitae</p>
-                              <p className="text-[10px] text-gray-500">
+                              <p className={`${isPendingApplicantModal ? "font-['Montserrat'] text-lg font-extrabold" : 'text-sm font-bold'}`}>Curriculum Vitae</p>
+                              <p className={`${isPendingApplicantModal ? "font-['Montserrat'] text-xs font-semibold" : 'text-[10px]'} ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                                 {selectedApplicant.cv_url ? 'Uploaded resume file' : 'No resume uploaded'}
                               </p>
                             </div>
                           </div>
                           {selectedApplicant.cv_url ? (
                             <div className="flex items-center gap-2">
-                              <a
-                                href={selectedApplicant.cv_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-500 hover:text-emerald-400 transition-colors"
+                              <button
+                                type="button"
+                                onClick={() => handleOpenResumePreviewModal(selectedApplicant)}
+                                className={`inline-flex items-center gap-1.5 ${isPendingApplicantModal ? "font-['Montserrat'] text-sm font-extrabold" : 'text-xs font-bold'} text-emerald-500 hover:text-emerald-400 transition-colors`}
                               >
                                 View File
-                              </a>
+                              </button>
                               <a
                                 href={selectedApplicant.cv_url}
                                 download={getApplicantResumeDownloadName(selectedApplicant)}
@@ -5479,12 +7046,22 @@ const Admin: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-gray-50 border-gray-100'}`}>
+                      <div className={`p-5 rounded-[24px] border ${
+                        isPendingApplicantModal
+                          ? (darkMode
+                              ? 'bg-slate-900/70 border-emerald-500/35 shadow-[0_18px_36px_-24px_rgba(16,185,129,0.75)]'
+                              : 'bg-white border-emerald-200 shadow-[0_18px_36px_-24px_rgba(16,185,129,0.55)]')
+                          : (darkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-gray-50 border-gray-100')
+                      }`}>
                         <div className="flex items-start justify-between gap-4 mb-4">
                           <div>
-                            <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Interview Schedule</p>
-                            <p className={`text-xs mt-1 ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
-                              Set calendar date and interview time while status is pending.
+                            <p className={`${isPendingApplicantModal ? "font-['Montserrat'] text-sm font-extrabold uppercase tracking-[0.16em]" : 'text-[10px] font-bold uppercase tracking-widest'} ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                              Interview Schedule
+                            </p>
+                            <p className={`${isPendingApplicantModal ? "font-['Montserrat'] text-[15px] font-medium mt-1.5" : 'text-xs mt-1'} ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                              {isSelectedApplicantProcessed
+                                ? 'Schedule and AI scan points from pending review.'
+                                : 'Set calendar date and interview time while status is pending.'}
                             </p>
                           </div>
                           {selectedApplicant.interview_at ? (
@@ -5498,34 +7075,61 @@ const Admin: React.FC = () => {
                           ) : null}
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <label className="block">
-                            <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Date</span>
-                            <input
-                              type="date"
-                              value={applicantInterviewDate}
-                              onChange={(e) => {
-                                setApplicantInterviewDate(e.target.value);
-                                setIsApplicantInterviewSaved(false);
-                                setApplicantInterviewSavedAt(null);
-                              }}
-                              className={`mt-2 w-full rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-900'}`}
-                            />
-                          </label>
-                          <label className="block">
-                            <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Time</span>
-                            <input
-                              type="time"
-                              value={applicantInterviewTime}
-                              onChange={(e) => {
-                                setApplicantInterviewTime(e.target.value);
-                                setIsApplicantInterviewSaved(false);
-                                setApplicantInterviewSavedAt(null);
-                              }}
-                              className={`mt-2 w-full rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-900'}`}
-                            />
-                          </label>
-                        </div>
+                        {isSelectedApplicantProcessed ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <label className="block">
+                              <span className={`${isPendingApplicantModal ? 'text-xs font-extrabold uppercase tracking-[0.14em]' : 'text-[10px] font-bold uppercase tracking-widest'} ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Saved Schedule</span>
+                              <input
+                                readOnly
+                                value={selectedApplicant.interview_at ? formatInterviewSchedule(selectedApplicant.interview_at) : 'No schedule saved'}
+                                className={`mt-2 w-full rounded-xl border px-3 py-2.5 ${isPendingApplicantModal ? "font-['Montserrat'] text-base font-semibold bg-white border-emerald-200 text-gray-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_20px_-18px_rgba(16,185,129,0.55)]" : `text-sm ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-900'}`}`}
+                              />
+                            </label>
+                            <label className="block">
+                              <span className={`${isPendingApplicantModal ? 'text-xs font-extrabold uppercase tracking-[0.14em]' : 'text-[10px] font-bold uppercase tracking-widest'} ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>AI Resume Points</span>
+                              <input
+                                readOnly
+                                value={
+                                  isLoadingSelectedApplicantResumePoints
+                                    ? 'Loading points...'
+                                    : typeof selectedApplicantResumePoints === 'number'
+                                      ? `${selectedApplicantResumePoints} / 100`
+                                      : 'Not available'
+                                }
+                                className={`mt-2 w-full rounded-xl border px-3 py-2.5 ${isPendingApplicantModal ? "font-['Montserrat'] text-base font-bold bg-white border-emerald-200 text-emerald-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_20px_-18px_rgba(16,185,129,0.55)]" : `text-sm font-semibold ${darkMode ? 'bg-slate-900 border-slate-700 text-emerald-300' : 'bg-white border-gray-200 text-emerald-700'}`}`}
+                              />
+                            </label>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <label className="block">
+                              <span className={`${isPendingApplicantModal ? 'text-xs font-extrabold uppercase tracking-[0.14em]' : 'text-[10px] font-bold uppercase tracking-widest'} ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Date</span>
+                              <input
+                                type="date"
+                                value={applicantInterviewDate}
+                                onChange={(e) => {
+                                  setApplicantInterviewDate(e.target.value);
+                                  setIsApplicantInterviewSaved(false);
+                                  setApplicantInterviewSavedAt(null);
+                                }}
+                                className={`mt-2 w-full rounded-xl border px-3 py-2.5 ${isPendingApplicantModal ? "font-['Montserrat'] text-base font-semibold bg-white border-emerald-200 text-gray-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_20px_-18px_rgba(16,185,129,0.55)]" : `text-sm ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-900'}`} focus:outline-none focus:ring-2 focus:ring-emerald-500/20`}
+                              />
+                            </label>
+                            <label className="block">
+                              <span className={`${isPendingApplicantModal ? 'text-xs font-extrabold uppercase tracking-[0.14em]' : 'text-[10px] font-bold uppercase tracking-widest'} ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Time</span>
+                              <input
+                                type="time"
+                                value={applicantInterviewTime}
+                                onChange={(e) => {
+                                  setApplicantInterviewTime(e.target.value);
+                                  setIsApplicantInterviewSaved(false);
+                                  setApplicantInterviewSavedAt(null);
+                                }}
+                                className={`mt-2 w-full rounded-xl border px-3 py-2.5 ${isPendingApplicantModal ? "font-['Montserrat'] text-base font-semibold bg-white border-emerald-200 text-gray-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_20px_-18px_rgba(16,185,129,0.55)]" : `text-sm ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-900'}`} focus:outline-none focus:ring-2 focus:ring-emerald-500/20`}
+                              />
+                            </label>
+                          </div>
+                        )}
 
                         {selectedApplicant.interview_at ? (
                           <p className={`mt-3 text-xs font-medium ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
@@ -5539,38 +7143,622 @@ const Admin: React.FC = () => {
                           </p>
                         ) : null}
 
-                        <button
-                          type="button"
-                          onClick={handleSaveApplicantInterviewSchedule}
-                          disabled={isSavingApplicantInterview || isUpdatingApplicantStatus}
-                          className="mt-4 w-full py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-emerald-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          {isSavingApplicantInterview ? 'Saving Schedule...' : isApplicantInterviewSaved ? 'Saved' : 'Save Interview Schedule'}
-                        </button>
+                        {!isSelectedApplicantProcessed ? (
+                          <button
+                            type="button"
+                            onClick={handleSaveApplicantInterviewSchedule}
+                            disabled={isSavingApplicantInterview || isUpdatingApplicantStatus}
+                            className={`mt-4 w-full py-2.5 rounded-xl bg-emerald-600 text-white ${isPendingApplicantModal ? "font-['Montserrat'] text-sm font-extrabold tracking-[0.12em]" : 'text-xs font-bold uppercase tracking-widest'} hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition-colors disabled:opacity-60 disabled:cursor-not-allowed`}
+                          >
+                            {isSavingApplicantInterview ? 'Saving Schedule...' : isApplicantInterviewSaved ? 'Saved' : 'Save Interview Schedule'}
+                          </button>
+                        ) : null}
                       </div>
                     </div>
 
-                    <div className="flex gap-4">
-                      <button 
-                        onClick={() => handleUpdateApplicationStatus(selectedApplicant, 'declined')}
-                        disabled={isUpdatingApplicantStatus}
-                        title="Decline this applicant and send decline email"
-                        className={`flex-1 py-4 rounded-2xl font-bold text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed ${darkMode ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+                    {selectedApplicantStatus === 'pending' ? (
+                      <div className="flex gap-4">
+                        <button
+                          onClick={() => handleUpdateApplicationStatus(selectedApplicant, 'declined')}
+                          disabled={isUpdatingApplicantStatus}
+                          title="Decline this applicant and send decline email"
+                          className="flex-1 py-4 rounded-2xl bg-red-600 text-white font-extrabold text-base tracking-[0.08em] hover:bg-red-700 shadow-lg shadow-red-600/25 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          {isUpdatingApplicantStatus ? 'Processing...' : 'Decline'}
+                        </button>
+                        <button
+                          onClick={() => handleUpdateApplicationStatus(selectedApplicant, 'accepted')}
+                          disabled={isUpdatingApplicantStatus || !isApplicantInterviewSaved || !selectedApplicant.interview_at}
+                          title={isApplicantInterviewSaved ? "Accept this applicant and send acceptance email" : "Save interview schedule first, then accept"}
+                          className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-extrabold text-base tracking-[0.08em] hover:bg-emerald-700 shadow-xl shadow-emerald-700/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          {isUpdatingApplicantStatus ? 'Processing...' : 'Accept'}
+                        </button>
+                      </div>
+                    ) : selectedApplicantStatus === 'accepted' ? (
+                      <div className="flex gap-4">
+                        <button
+                          onClick={() => setSelectedApplicant(null)}
+                          className={`flex-1 py-4 rounded-2xl font-bold text-sm transition-all ${darkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                        >
+                          Close
+                        </button>
+                        <button
+                          onClick={() => handleMarkApplicationAsHired(selectedApplicant)}
+                          disabled={applicantRowActionId === selectedApplicant.id}
+                          title="Mark this accepted applicant as hired"
+                          className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          {applicantRowActionId === selectedApplicant.id ? 'Processing...' : 'Hire'}
+                        </button>
+                      </div>
+                    ) : selectedApplicantStatus === 'hired' ? (
+                      <button
+                        type="button"
+                        disabled
+                        className="w-full py-4 rounded-2xl bg-blue-100 text-blue-700 font-bold text-sm cursor-not-allowed"
                       >
-                        {isUpdatingApplicantStatus ? 'Processing...' : 'Decline'}
+                        Hired
                       </button>
-                      <button 
-                        onClick={() => handleUpdateApplicationStatus(selectedApplicant, 'accepted')}
-                        disabled={isUpdatingApplicantStatus || !isApplicantInterviewSaved || !selectedApplicant.interview_at}
-                        title={isApplicantInterviewSaved ? "Accept this applicant and send acceptance email" : "Save interview schedule first, then accept"}
-                        className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    ) : null}
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {resumePreviewApplicant && (
+                <div className="fixed inset-0 z-[95] flex items-center justify-center p-4">
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={handleCloseResumePreviewModal}
+                    className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.96, y: 16 }}
+                    className={`relative w-full max-w-6xl h-[90vh] rounded-[30px] border shadow-2xl overflow-hidden ${
+                      darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-black/10 text-gray-900'
+                    }`}
+                  >
+                    <div className={`h-16 px-6 border-b flex items-center justify-between ${darkMode ? 'border-slate-700' : 'border-black/10'}`}>
+                      <div>
+                        <p className={`text-xs font-bold uppercase tracking-widest ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>Resume Viewer</p>
+                        <p className="text-sm font-semibold">
+                          {`${resumePreviewApplicant.first_name || ''} ${resumePreviewApplicant.last_name || ''}`.replace(/\s+/g, ' ').trim() || 'Applicant'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCloseResumePreviewModal}
+                        className={`w-9 h-9 rounded-xl border inline-flex items-center justify-center transition-colors ${
+                          darkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-gray-200 text-gray-500 hover:bg-gray-100'
+                        }`}
+                        title="Exit resume preview"
                       >
-                        {isUpdatingApplicantStatus ? 'Processing...' : 'Accept'}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                       </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] h-[calc(90vh-64px)]">
+                      <div className={`p-4 border-r h-full ${darkMode ? 'border-slate-700 bg-slate-950/30' : 'border-black/10 bg-gray-50'}`}>
+                        <div className={`w-full h-full rounded-2xl overflow-hidden border ${darkMode ? 'border-slate-700 bg-slate-900' : 'border-gray-200 bg-white'}`}>
+                          {resumePreviewApplicant.cv_url ? (
+                            <iframe
+                              title="Applicant resume file"
+                              src={resumePreviewApplicant.cv_url}
+                              className="w-full h-full"
+                            />
+                          ) : (
+                            <div className="h-full flex items-center justify-center">
+                              <p className={`text-sm italic ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>No resume file available.</p>
+                            </div>
+                          )}
+                        </div>
+                        {resumePreviewApplicant.cv_url ? (
+                          <div className="mt-3 flex items-center justify-between gap-3">
+                            <p className={`text-xs truncate ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                              {getApplicantResumeDownloadName(resumePreviewApplicant)}
+                            </p>
+                            <a
+                              href={resumePreviewApplicant.cv_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs font-semibold text-emerald-600 hover:text-emerald-500"
+                            >
+                              Open In New Tab
+                            </a>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="p-5 h-full overflow-y-auto">
+                        <div className={`rounded-2xl border p-4 ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-gray-50 border-gray-200'}`}>
+                          <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>AI Analyze Points</p>
+                          {isAnalyzingResume ? (
+                            <div className="mt-4 flex items-center gap-3">
+                              <span className={`inline-block w-5 h-5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin`} />
+                              <p className={`text-sm font-medium ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                                Loading AI Analyze...
+                              </p>
+                            </div>
+                          ) : null}
+
+                          {resumeAnalysisResult ? (
+                            <div className="mt-4 space-y-4">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <label className="block">
+                                  <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Total Points</span>
+                                  <input
+                                    readOnly
+                                    value={resumeAnalysisResult.totalPoints}
+                                    className={`mt-1 w-full rounded-xl border px-3 py-2.5 text-sm font-bold ${darkMode ? 'bg-slate-900 border-slate-700 text-emerald-300' : 'bg-white border-gray-200 text-emerald-700'}`}
+                                  />
+                                </label>
+                                <label className="block">
+                                  <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Score Range</span>
+                                  <input
+                                    readOnly
+                                    value={`${resumeAnalysisResult.totalPoints} / ${resumeAnalysisResult.maxPoints}`}
+                                    className={`mt-1 w-full rounded-xl border px-3 py-2.5 text-sm font-semibold ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-gray-200 text-gray-700'}`}
+                                  />
+                                </label>
+                              </div>
+
+                              <div className={`rounded-xl border overflow-hidden ${darkMode ? 'border-slate-700' : 'border-gray-200'}`}>
+                                <div className={`max-h-[340px] overflow-y-auto ${darkMode ? 'bg-slate-900/40' : 'bg-white'}`}>
+                                  {resumeAnalysisResult.sections.map((section) => (
+                                    <div key={section.key} className={`px-3 py-3 border-b last:border-b-0 ${darkMode ? 'border-slate-700' : 'border-gray-100'}`}>
+                                      <div className="flex items-center justify-between gap-3">
+                                        <p className={`text-sm font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{section.label}</p>
+                                        <span className={`text-xs font-bold px-2 py-1 rounded-full ${darkMode ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
+                                          {section.points} / {section.max}
+                                        </span>
+                                      </div>
+                                      <p className={`text-[11px] mt-1 leading-relaxed ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                                        {section.notes.join(' | ')}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {!isAnalyzingResume && !resumeAnalysisResult && resumeAnalysisNotice ? (
+                            <p className={`mt-3 text-xs font-semibold ${resumeAnalysisNotice.toLowerCase().includes('failed') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-700')}`}>
+                              {resumeAnalysisNotice}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-5 flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={handleCloseResumePreviewModal}
+                            className={`px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest border transition-colors ${
+                              darkMode ? 'border-slate-700 text-slate-200 hover:bg-slate-800' : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                            }`}
+                          >
+                            Exit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleConfirmResumeAnalysis}
+                            disabled={isAnalyzingResume || !resumeAnalysisResult}
+                            className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Confirm
+                          </button>
+                          {resumeAnalysisNotice ? (
+                            <p className={`text-xs font-semibold ${resumeAnalysisNotice.toLowerCase().includes('failed') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-700')}`}>
+                              {resumeAnalysisNotice}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
                   </motion.div>
                 </div>
               )}
+            </AnimatePresence>
+          </div>
+        ) : activeTab === 'Inbox' ? (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h2 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-[#123f2f]'}`}>Inbox</h2>
+                <p className={`${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                  Contact Us form submissions from Supabase.
+                </p>
+                <p className={`text-xs mt-1 font-semibold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                  {filteredInboxMessages.length} record{filteredInboxMessages.length === 1 ? '' : 's'}
+                </p>
+                {inboxSourceDebug.length > 0 ? (
+                  <p className={`mt-1 text-[11px] ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                    {inboxSourceDebug
+                      .map((sourceItem) =>
+                        `${sourceItem.table}: ${sourceItem.rows}${sourceItem.error ? ` (${sourceItem.error})` : ''}`
+                      )
+                      .join(' | ')}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={inboxSearchTerm}
+                  onChange={(e) => setInboxSearchTerm(e.target.value)}
+                  placeholder="Search name..."
+                  className={`h-10 w-72 rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
+                    darkMode ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder:text-slate-500' : 'bg-white border-gray-200 text-gray-900 placeholder:text-gray-400'
+                  }`}
+                />
+                {inboxNotice ? (
+                  <p className={`text-xs font-semibold ${inboxNotice.toLowerCase().includes('unable') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-700')}`}>
+                    {inboxNotice}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={fetchContactMessages}
+                  className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-white border-black/10 text-gray-600 hover:bg-gray-50'}`}
+                  title="Refresh inbox"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-4">
+              <aside className={`rounded-[28px] border p-4 shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-widest mb-3 ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                  Inbox Names
+                </p>
+
+                <div className={`rounded-2xl border p-2 h-[328px] overflow-y-auto ${darkMode ? 'border-slate-700 bg-slate-900/30' : 'border-black/10 bg-gray-50/50'}`}>
+                  {isLoadingInbox ? (
+                    <p className={`py-10 text-center text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                      Loading contact messages...
+                    </p>
+                  ) : filteredInboxMessages.length === 0 ? (
+                    <p className={`py-10 text-center text-sm italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>
+                      No contact messages found.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredInboxMessages.map((messageItem) => {
+                        const isUnread = !readInboxIds.includes(messageItem.id);
+                        const isSelected = selectedInboxMessageId === messageItem.id;
+                        return (
+                          <motion.button
+                            key={messageItem.id}
+                            type="button"
+                            onClick={() => handleSelectInboxMessage(messageItem.id)}
+                            whileTap={{ scale: 0.97 }}
+                            transition={{ duration: 0.14, ease: 'easeOut' }}
+                            className={`w-full rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                              isSelected
+                                ? (darkMode ? 'border-emerald-400/60 bg-emerald-500/15' : 'border-emerald-300 bg-emerald-50')
+                                : isUnread
+                                  ? (darkMode ? 'border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/15' : 'border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/70')
+                                  : (darkMode ? 'border-slate-700 bg-slate-900/40 hover:bg-slate-700/50' : 'border-black/10 bg-white hover:bg-gray-50')
+                            } h-14`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className={`text-sm font-semibold truncate ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                                {getInboxSenderName(messageItem) || 'N/A'}
+                              </p>
+                              {isUnread ? (
+                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${darkMode ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
+                                  Unread
+                                </span>
+                              ) : null}
+                            </div>
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </aside>
+
+              <section className={`rounded-[28px] border p-5 md:p-6 shadow-sm min-h-[420px] ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                {!selectedInboxMessage ? (
+                  <div className="h-full min-h-[320px] flex items-center justify-center">
+                    <p className={`text-sm italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>
+                      Select a name from the left to view full details.
+                    </p>
+                  </div>
+                ) : (
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={selectedInboxMessage.id}
+                      initial={{ opacity: 0, x: 10, scale: 0.965 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                      exit={{ opacity: 0, x: -8, scale: 0.98 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                      className="space-y-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                          Message Details
+                        </h3>
+                        <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                          {formatDateTimeLabel(selectedInboxMessage.created_at)}
+                        </p>
+                      </div>
+
+                      <label className="block">
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                          Full Name
+                        </span>
+                        <input
+                          type="text"
+                          readOnly
+                          value={getInboxSenderName(selectedInboxMessage) || 'N/A'}
+                          className={`mt-2 w-full rounded-2xl border px-4 py-3 text-sm shadow-sm ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100 shadow-black/20' : 'bg-white border-emerald-100 text-gray-900 shadow-emerald-100/60'}`}
+                        />
+                      </label>
+
+                      <label className="block">
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                          Email
+                        </span>
+                        <input
+                          type="text"
+                          readOnly
+                          value={selectedInboxMessage.email || 'N/A'}
+                          className={`mt-2 w-full rounded-2xl border px-4 py-3 text-sm shadow-sm ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100 shadow-black/20' : 'bg-white border-emerald-100 text-gray-900 shadow-emerald-100/60'}`}
+                        />
+                      </label>
+
+                      <label className="block">
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                          Message
+                        </span>
+                        <textarea
+                          readOnly
+                          value={selectedInboxMessage.message || 'N/A'}
+                          rows={9}
+                          className={`mt-2 w-full rounded-2xl border px-4 py-3 text-sm whitespace-pre-wrap resize-none shadow-sm ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100 shadow-black/20' : 'bg-white border-emerald-100 text-gray-900 shadow-emerald-100/60'}`}
+                        />
+                      </label>
+
+                      <div className="pt-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                            Reply
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInboxReplyDraft('');
+                              setInboxReplyNotice('');
+                              setIsInboxReplyComposerOpen(true);
+                            }}
+                            className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${
+                              darkMode
+                                ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+                                : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                            }`}
+                            title="Reply to this message"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+                            Reply
+                          </button>
+                        </div>
+                        {inboxReplyNotice ? (
+                          <p className={`mt-2 text-xs font-semibold ${inboxReplyNotice.toLowerCase().includes('empty') || inboxReplyNotice.toLowerCase().includes('select') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-700')}`}>
+                            {inboxReplyNotice}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="pt-1">
+                        <p className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                          Sent Replies
+                        </p>
+                        {selectedInboxReplies.length === 0 ? (
+                          <div className={`rounded-xl border px-3 py-3 text-xs italic ${darkMode ? 'border-slate-700 bg-slate-900/40 text-slate-500' : 'border-black/10 bg-gray-50 text-gray-400'}`}>
+                            No replies yet.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {selectedInboxReplies.map((replyItem) => (
+                              <button
+                                key={replyItem.id}
+                                type="button"
+                                onClick={() => setSelectedInboxReplyView(replyItem)}
+                                className={`rounded-xl border p-3 text-left transition-colors ${
+                                  darkMode
+                                    ? 'border-slate-700 bg-slate-900/40 hover:bg-slate-700/40'
+                                    : 'border-black/10 bg-white hover:bg-gray-50'
+                                }`}
+                              >
+                                <p className={`text-xs font-bold truncate ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>
+                                  {replyItem.senderName || currentAdminName || 'Admin'}
+                                </p>
+                                <p className={`mt-1 text-xs line-clamp-2 ${darkMode ? 'text-slate-400' : 'text-gray-600'}`}>
+                                  {replyItem.text}
+                                </p>
+                                <p className={`mt-2 text-[10px] ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>
+                                  {formatDateTimeLabel(replyItem.sentAt)}
+                                </p>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  </AnimatePresence>
+                )}
+              </section>
+            </div>
+
+            <AnimatePresence>
+              {isInboxReplyComposerOpen && selectedInboxMessage ? (
+                <motion.div
+                  className="fixed inset-0 z-[120] flex items-center justify-center p-4"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <button
+                    type="button"
+                    className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
+                    onClick={() => setIsInboxReplyComposerOpen(false)}
+                    aria-label="Close reply modal"
+                  />
+                  <motion.div
+                    initial={{ y: 24, opacity: 0, scale: 0.98 }}
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
+                    exit={{ y: 18, opacity: 0, scale: 0.98 }}
+                    transition={{ duration: 0.22, ease: 'easeOut' }}
+                    className={`relative w-full max-w-2xl rounded-[28px] border p-6 md:p-7 shadow-2xl ${darkMode ? 'bg-slate-900/95 border-emerald-500/35' : 'bg-white border-emerald-200'}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className={`text-2xl font-bold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>Reply Message</h3>
+                        <p className={`text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                          Send a reply to {getInboxSenderName(selectedInboxMessage) || 'this user'}.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsInboxReplyComposerOpen(false)}
+                        className={`h-9 w-9 rounded-lg border text-lg leading-none ${darkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-black/10 text-gray-500 hover:bg-gray-50'}`}
+                        aria-label="Close"
+                      >
+                        x
+                      </button>
+                    </div>
+
+                    <div className="mt-5 space-y-4">
+                      <label className="block">
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Name</span>
+                        <input
+                          type="text"
+                          readOnly
+                          value={currentAdminName || 'Admin'}
+                          className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm cursor-not-allowed ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-gray-100 border-black/10 text-gray-700'}`}
+                        />
+                      </label>
+
+                      <label className="block">
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Email</span>
+                        <input
+                          type="text"
+                          readOnly
+                          value={currentAdminEmail || 'N/A'}
+                          className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm cursor-not-allowed ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-gray-100 border-black/10 text-gray-700'}`}
+                        />
+                      </label>
+
+                      <label className="block">
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Message</span>
+                        <textarea
+                          value={inboxReplyDraft}
+                          onChange={(e) => setInboxReplyDraft(e.target.value)}
+                          rows={7}
+                          placeholder="Type your reply..."
+                          className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500/25 ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder:text-slate-500' : 'bg-white border-black/10 text-gray-900 placeholder:text-gray-400'}`}
+                        />
+                      </label>
+
+                      <div className="flex items-center justify-end gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setIsInboxReplyComposerOpen(false)}
+                          className={`px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest border ${darkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-black/10 text-gray-600 hover:bg-gray-50'}`}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSendInboxReply}
+                          className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-emerald-700 transition-colors"
+                        >
+                          Send
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {selectedInboxReplyView ? (
+                <motion.div
+                  className="fixed inset-0 z-[120] flex items-center justify-center p-4"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <button
+                    type="button"
+                    className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
+                    onClick={() => setSelectedInboxReplyView(null)}
+                    aria-label="Close reply preview"
+                  />
+                  <motion.div
+                    initial={{ y: 16, opacity: 0, scale: 0.98 }}
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
+                    exit={{ y: 12, opacity: 0, scale: 0.98 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    className={`relative w-full max-w-2xl rounded-[24px] border p-6 shadow-2xl ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-black/10'}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className={`text-lg font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Sent Reply</h3>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedInboxReplyView(null)}
+                        className={`h-9 w-9 rounded-lg border text-lg leading-none ${darkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-black/10 text-gray-500 hover:bg-gray-50'}`}
+                        aria-label="Close"
+                      >
+                        x
+                      </button>
+                    </div>
+
+                    <div className="mt-4 space-y-4">
+                      <label className="block">
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Name</span>
+                        <input
+                          type="text"
+                          readOnly
+                          value={selectedInboxReplyView.senderName || 'Admin'}
+                          className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-gray-100 border-black/10 text-gray-700'}`}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Email</span>
+                        <input
+                          type="text"
+                          readOnly
+                          value={selectedInboxReplyView.senderEmail || 'N/A'}
+                          className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-gray-100 border-black/10 text-gray-700'}`}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Message</span>
+                        <textarea
+                          readOnly
+                          value={selectedInboxReplyView.text}
+                          rows={7}
+                          className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm whitespace-pre-wrap resize-none ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-black/10 text-gray-900'}`}
+                        />
+                      </label>
+                      <p className={`text-xs ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>
+                        Sent: {formatDateTimeLabel(selectedInboxReplyView.sentAt)}
+                      </p>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              ) : null}
             </AnimatePresence>
           </div>
         ) : activeTab === 'Settings' ? (
@@ -6187,7 +8375,7 @@ const Admin: React.FC = () => {
                     </thead>
                     <tbody>
                       {filteredManagePendingProfiles.map((p, index) => (
-                        <tr key={p.id} className={`border-b transition-colors ${darkMode ? 'border-slate-700' : 'border-black/5'} [&>td]:transition-colors [&:hover>td]:bg-[#f5eedb]`}>
+                        <tr key={p.id} className={`border-b transition-colors ${darkMode ? 'border-slate-700' : 'border-black/5'} [&>td]:transition-colors [&:hover>td]:bg-white`}>
                           <td className={`py-4 text-xs font-mono ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                             {formatPendingProfileCode(index)}
                           </td>

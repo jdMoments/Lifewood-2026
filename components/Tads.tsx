@@ -189,90 +189,131 @@ const DraggableIcon: React.FC<{ src: string; className: string; bounce?: boolean
 };
 
 const DataServicingAccordion: React.FC = () => {
-  const [hoveredIndex, setHoveredIndex] = useState<number>(0);
+  const [activeIndex, setActiveIndex] = useState<number>(0);
+  const [hasSelectedImage, setHasSelectedImage] = useState(false);
+  const revealTextRef = useRef<HTMLDivElement | null>(null);
 
   const sections = [
     {
       id: '01',
       title: 'Objective',
       desc: 'Scan document for preservation, extract data and structure into database.',
-      image: 'https://picsum.photos/seed/scanner-ai/1200/800',
+      image: 'https://images.unsplash.com/photo-1488190211105-8b0e65b80b4e?w=1400&auto=format&fit=crop&q=80',
       label: 'OBJECTIVE'
     },
     {
       id: '02',
       title: 'Key Features',
       desc: 'Features include Auto Crop, Auto De-skew, Blur Detection, Foreign Object Detection, and AI Data Extraction.',
-      image: 'https://picsum.photos/seed/data-ai/1200/800',
+      image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1400&auto=format&fit=crop&q=80',
       label: 'KEY FEATURES'
     },
     {
       id: '03',
       title: 'Results',
       desc: 'Accurate and precise data is ensured through validation and quality assurance. The system is efficient and scalable, enabling fast and adaptable data extraction. It supports multiple languages and formats, allowing the handling of diverse documents. Advanced features include auto-crop, de-skew, blur, and object detection. With AI integration, the solution provides structured data for AI tools and delivers clear, visual, and easy-to-understand results.',
-      image: 'https://picsum.photos/seed/chart-ai/1200/800',
+      image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1400&auto=format&fit=crop&q=80',
       label: 'RESULTS'
     }
   ];
 
+  const activeSection = sections[activeIndex];
+
+  useEffect(() => {
+    if (!hasSelectedImage || !revealTextRef.current) return;
+    gsap.fromTo(
+      revealTextRef.current,
+      { clipPath: 'inset(0 100% 0 0)', x: -30, opacity: 0 },
+      {
+        clipPath: 'inset(0 0 0 0)',
+        x: 0,
+        opacity: 1,
+        duration: 0.75,
+        ease: 'power3.out'
+      }
+    );
+  }, [activeIndex, hasSelectedImage]);
+
+  const handleSelectImage = (index: number) => {
+    setActiveIndex(index);
+    setHasSelectedImage(true);
+  };
+
   return (
-    <div className="flex flex-col lg:flex-row gap-4 h-[600px] items-stretch">
-      {sections.map((section, index) => {
-        const isActive = hoveredIndex === index;
-        return (
-          <div
-            key={section.id}
-            onMouseEnter={() => setHoveredIndex(index)}
-            className={`relative overflow-hidden group cursor-pointer border-l border-black/10 first:border-l-0 transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${isActive ? 'flex-[4]' : 'flex-[0.5]'}`}
-          >
-            {isActive ? (
-              <div className="flex flex-col lg:flex-row h-full w-full p-8 gap-8 items-center">
-                <div className="w-full lg:w-1/3 space-y-6">
-                  <h3 className="text-3xl font-bold text-black">{section.title}</h3>
-                  <p className="text-gray-600 text-lg leading-relaxed">{section.desc}</p>
-                </div>
-                <div className="flex-1 relative h-full w-full">
-                  <div className="absolute inset-0 rounded-[3rem] overflow-hidden shadow-xl">
-                    <img
-                      src={section.image}
-                      alt={section.title}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                    {/* Number Overlay */}
-                    <div className="absolute bottom-0 right-0 bg-white p-8 rounded-tl-[3rem] flex flex-col items-end">
-                      <span className="text-6xl font-bold text-black leading-none">{section.id}</span>
-                      <span className="text-sm font-bold text-black mt-2">{section.title}</span>
-                    </div>
+    <div
+      className="relative overflow-hidden rounded-[3rem] min-h-[620px] border border-white/20 shadow-[0_26px_70px_rgba(0,0,0,0.28)]"
+      style={{
+        backgroundImage: `url(${activeSection.image})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+    >
+      <div className="absolute inset-0 bg-gradient-to-br from-black/75 via-black/60 to-black/75" />
+
+      <div className="relative z-10 p-6 md:p-10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {sections.map((section, index) => {
+            const isActive = activeIndex === index;
+            return (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => handleSelectImage(index)}
+                className={`text-left rounded-[1.6rem] overflow-hidden border transition-all duration-500 ${
+                  isActive
+                    ? 'border-white shadow-[0_18px_45px_rgba(0,0,0,0.45)] -translate-y-1'
+                    : 'border-white/30 hover:border-white/70'
+                }`}
+              >
+                <div className="relative h-[190px] md:h-[220px]">
+                  <img
+                    src={section.image}
+                    alt={section.title}
+                    className={`w-full h-full object-cover transition-all duration-500 ${isActive ? 'scale-105' : 'grayscale-[30%]'}`}
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <div className="absolute bottom-3 left-3 right-3">
+                    <p className="text-[11px] tracking-widest uppercase font-bold text-white/75">
+                      Image {index + 1}
+                    </p>
+                    <h4 className="text-white text-xl font-bold leading-tight">{section.title}</h4>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="h-full w-full flex flex-col items-center justify-start pt-10 gap-8">
-                <div className="flex items-center gap-2">
-                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400 -rotate-45">
-                    <line x1="19" y1="12" x2="5" y2="12"></line>
-                    <polyline points="12 19 5 12 12 5"></polyline>
-                  </svg>
-                </div>
-                <div className="flex flex-col items-center gap-4">
-                  <span className="text-4xl font-bold text-gray-300">{section.id}</span>
-                  <div className="[writing-mode:vertical-lr] rotate-180 text-sm font-bold tracking-[0.3em] text-gray-400 whitespace-nowrap">
-                    {section.label}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-8 min-h-[220px] md:min-h-[250px]">
+          {hasSelectedImage ? (
+            <div
+              ref={revealTextRef}
+              className="max-w-3xl rounded-[1.8rem] border border-white/25 bg-white/10 backdrop-blur-sm p-6 md:p-8"
+            >
+              <p className="text-xs tracking-[0.2em] uppercase font-extrabold text-white/75 mb-2">
+                {activeSection.id} {activeSection.label}
+              </p>
+              <h3 className="text-3xl md:text-4xl font-bold text-white mb-4">{activeSection.title}</h3>
+              <p className="text-white/90 text-base md:text-lg leading-relaxed">{activeSection.desc}</p>
+            </div>
+          ) : (
+            <div className="max-w-3xl rounded-[1.8rem] border border-white/25 bg-white/10 backdrop-blur-sm p-6 md:p-8">
+              <p className="text-white/85 text-base md:text-lg font-semibold">
+                Click an image to reveal the section details.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
 
 const HeritageResearchShowcase: React.FC = () => {
   const [activeIndex, setActiveIndex] = useState(0);
-  const cardRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [hasClickedImage, setHasClickedImage] = useState(false);
+  const textRevealRef = useRef<HTMLDivElement | null>(null);
 
   const heritageData = [
     {
@@ -295,47 +336,46 @@ const HeritageResearchShowcase: React.FC = () => {
       description: 'Historical news is processed for names, places, and dates, adding cultural context around families, events, and local histories.',
       image: 'https://images.unsplash.com/photo-1615403916271-e2dbc8cf3bf4?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8M3x8bmV3c3BhcGVyc3xlbnwwfHwwfHx8MA%3D%3D',
       accent: 'bg-emerald-300'
-    },
-    {
-      title: 'Archives',
-      subtitle: 'Long-term preservation',
-      description: 'Fragile source materials are digitized, quality-checked, and structured for future access by institutions, families, and researchers.',
-      image: 'https://plus.unsplash.com/premium_photo-1677567996070-68fa4181775a?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8YXJjaGl2ZXN8ZW58MHx8MHx8fDA%3D',
-      accent: 'bg-sky-300'
     }
   ];
 
+  const activeItem = heritageData[activeIndex];
+
   useEffect(() => {
-    if (!cardRefs.current.length) return;
+    if (!hasClickedImage || !textRevealRef.current) return;
     gsap.fromTo(
-      cardRefs.current,
-      { y: 30, opacity: 0, scale: 0.96 },
+      textRevealRef.current,
+      { clipPath: 'inset(0 100% 0 0)', x: -42, opacity: 0 },
       {
-        y: 0,
+        clipPath: 'inset(0 0% 0 0)',
+        x: 0,
         opacity: 1,
-        scale: 1,
         duration: 0.7,
-        ease: 'power2.out',
-        stagger: 0.12
+        ease: 'power3.out',
       }
     );
-  }, []);
+  }, [activeIndex, hasClickedImage]);
 
-  useEffect(() => {
-    const autoPlay = window.setInterval(() => {
-      setActiveIndex((prev) => (prev + 1) % heritageData.length);
-    }, 4500);
-
-    return () => window.clearInterval(autoPlay);
-  }, [heritageData.length]);
+  const handleImageClick = (index: number) => {
+    setActiveIndex(index);
+    setHasClickedImage(true);
+  };
 
   return (
-    <div className="mt-28 rounded-[3rem] bg-[linear-gradient(145deg,#022a24_0%,#0b3d35_35%,#111827_100%)] p-8 md:p-12 xl:p-14 relative overflow-hidden">
+    <div
+      className="mt-28 rounded-[3rem] relative overflow-hidden border border-white/20 shadow-[0_30px_80px_rgba(2,42,36,0.35)]"
+      style={{
+        backgroundImage: `url(${activeItem.image})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+    >
+      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(2,42,36,0.88)_0%,rgba(6,62,54,0.78)_45%,rgba(8,14,28,0.82)_100%)]" />
       <div className="absolute -top-16 right-12 w-56 h-56 rounded-full bg-[#FFB347]/25 blur-3xl" />
       <div className="absolute -bottom-20 left-6 w-64 h-64 rounded-full bg-lw-green/25 blur-3xl" />
 
-      <div className="relative z-10 flex flex-col xl:flex-row gap-8 xl:items-end xl:justify-between mb-10">
-        <div className="max-w-3xl">
+      <div className="relative z-10 p-8 md:p-12 xl:p-14">
+        <div className="max-w-4xl mb-8">
           <div className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-white/15 text-white text-xs tracking-widest uppercase font-bold mb-4">
             <span>003</span>
             <span>Global Ancestry Intelligence</span>
@@ -348,50 +388,65 @@ const HeritageResearchShowcase: React.FC = () => {
           </p>
         </div>
 
-        <div className="w-full xl:w-[360px] rounded-2xl border border-white/15 bg-white/10 backdrop-blur-sm p-5">
-          <p className="text-[11px] text-white/60 uppercase tracking-widest font-bold mb-2">Current Focus</p>
-          <h4 className="text-2xl font-bold text-white">{heritageData[activeIndex].title}</h4>
-          <p className="text-sm text-[#FFB347] mt-1">{heritageData[activeIndex].subtitle}</p>
-          <p className="text-sm text-white/80 mt-3 leading-relaxed">{heritageData[activeIndex].description}</p>
-        </div>
-      </div>
-
-      <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {heritageData.map((item, index) => {
-          const isActive = index === activeIndex;
-          return (
-            <button
-              key={item.title}
-              ref={(el) => {
-                cardRefs.current[index] = el;
-              }}
-              onMouseEnter={() => setActiveIndex(index)}
-              onFocus={() => setActiveIndex(index)}
-              className={`text-left group relative rounded-[1.75rem] overflow-hidden border transition-all duration-700 ${
-                isActive
-                  ? 'border-white/70 -translate-y-2 shadow-[0_25px_50px_rgba(0,0,0,0.35)]'
-                  : 'border-white/20 opacity-80 hover:opacity-100'
-              }`}
+        <div className="mb-8 min-h-[170px]">
+          {hasClickedImage ? (
+            <div
+              ref={textRevealRef}
+              className="w-full xl:w-[700px] rounded-2xl border border-white/20 bg-black/35 backdrop-blur-sm p-5"
             >
-              <div className="relative h-[300px]">
-                <img
-                  src={item.image}
-                  alt={item.title}
-                  className={`w-full h-full object-cover transition-all duration-700 ${
-                    isActive ? 'scale-105 grayscale-0' : 'grayscale-[40%] group-hover:grayscale-0'
-                  }`}
-                  referrerPolicy="no-referrer"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
-                <div className={`absolute top-4 left-4 w-2.5 h-2.5 rounded-full ${item.accent}`} />
-                <div className="absolute bottom-4 left-4 right-4">
-                  <p className="text-[11px] text-white/65 uppercase tracking-widest font-bold">{item.subtitle}</p>
-                  <h5 className="text-2xl font-bold text-white">{item.title}</h5>
+              <p className="text-[11px] text-white/65 uppercase tracking-widest font-bold mb-2">
+                {activeItem.subtitle}
+              </p>
+              <h4 className="text-2xl md:text-3xl font-bold text-white">{activeItem.title}</h4>
+              <p className="text-sm md:text-base text-white/85 mt-3 leading-relaxed">
+                {activeItem.description}
+              </p>
+            </div>
+          ) : (
+            <p className="text-white/80 text-sm md:text-base font-medium">
+              Click one of the three images below to reveal details.
+            </p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {heritageData.map((item, index) => {
+            const isActive = index === activeIndex;
+            return (
+              <button
+                key={item.title}
+                type="button"
+                onClick={() => handleImageClick(index)}
+                className={`text-left group relative rounded-[1.75rem] overflow-hidden border transition-all duration-500 ${
+                  isActive
+                    ? 'border-white/80 -translate-y-2 shadow-[0_25px_50px_rgba(0,0,0,0.35)]'
+                    : 'border-white/25 hover:border-white/60'
+                }`}
+              >
+                <div className="relative h-[240px] md:h-[280px]">
+                  <img
+                    src={item.image}
+                    alt={item.title}
+                    className={`w-full h-full object-cover transition-all duration-700 ${
+                      isActive ? 'scale-105 grayscale-0' : 'grayscale-[30%] group-hover:grayscale-0'
+                    }`}
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
+                  <div className={`absolute top-4 left-4 w-2.5 h-2.5 rounded-full ${item.accent}`} />
+                  <div className="absolute bottom-4 left-4 right-4">
+                    <p className="text-[11px] text-white/70 uppercase tracking-widest font-bold">
+                      Image {index + 1}
+                    </p>
+                    <h5 className="text-xl md:text-2xl font-bold text-white">
+                      {item.title}
+                    </h5>
+                  </div>
                 </div>
-              </div>
-            </button>
-          );
-        })}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

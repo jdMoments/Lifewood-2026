@@ -103,7 +103,11 @@ const TVertical: React.FC = () => {
 };
 
 const VerticalDataAccordion: React.FC = () => {
-  const [hoveredIndex, setHoveredIndex] = useState<number>(0);
+  const [activeIndex, setActiveIndex] = useState<number>(0);
+  const [pendingIndex, setPendingIndex] = useState<number | null>(null);
+  const [revealImage, setRevealImage] = useState<string | null>(null);
+  const textRevealRef = useRef<HTMLDivElement | null>(null);
+  const backgroundRevealRef = useRef<HTMLDivElement | null>(null);
 
   const sections = [
     {
@@ -129,58 +133,121 @@ const VerticalDataAccordion: React.FC = () => {
     }
   ];
 
+  const selectedIndex = pendingIndex ?? activeIndex;
+  const activeSection = sections[activeIndex];
+
+  useEffect(() => {
+    if (pendingIndex === null || !revealImage || !backgroundRevealRef.current) return;
+
+    const nextIndex = pendingIndex;
+    const revealElement = backgroundRevealRef.current;
+    gsap.killTweensOf(revealElement);
+    gsap.fromTo(
+      revealElement,
+      { clipPath: 'inset(0 100% 0 0)' },
+      {
+        clipPath: 'inset(0 0 0 0)',
+        duration: 0.78,
+        ease: 'power3.out',
+        onComplete: () => {
+          setActiveIndex(nextIndex);
+          setPendingIndex(null);
+          setRevealImage(null);
+        },
+      }
+    );
+  }, [pendingIndex, revealImage]);
+
+  useEffect(() => {
+    if (!textRevealRef.current) return;
+    gsap.fromTo(
+      textRevealRef.current,
+      { clipPath: 'inset(0 100% 0 0)', x: -26, opacity: 0 },
+      {
+        clipPath: 'inset(0 0 0 0)',
+        x: 0,
+        opacity: 1,
+        duration: 0.72,
+        ease: 'power3.out',
+      }
+    );
+  }, [activeIndex]);
+
+  const handleSelectSection = (index: number) => {
+    if (index === activeIndex) return;
+    setPendingIndex(index);
+    setRevealImage(sections[index].image);
+  };
+
   return (
-    <div className="flex flex-col lg:flex-row gap-4 h-auto lg:h-[700px] items-stretch">
-      {sections.map((section, index) => {
-        const isActive = hoveredIndex === index;
-        return (
+    <div
+      className="relative rounded-[3rem] overflow-hidden min-h-[700px] border border-white/20 shadow-[0_28px_80px_rgba(0,0,0,0.25)]"
+      style={{
+        backgroundImage: `url(${activeSection.image})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+    >
+      <div className="absolute inset-0 bg-[linear-gradient(140deg,rgba(8,22,38,0.84)_0%,rgba(12,37,57,0.72)_45%,rgba(14,18,27,0.82)_100%)]" />
+
+      {revealImage ? (
+        <div
+          ref={backgroundRevealRef}
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `url(${revealImage})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
+        />
+      ) : null}
+
+      <div className="relative z-10 p-6 md:p-10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {sections.map((section, index) => {
+            const isSelected = selectedIndex === index;
+            return (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => handleSelectSection(index)}
+                className={`text-left rounded-[1.6rem] overflow-hidden border transition-all duration-500 ${
+                  isSelected
+                    ? 'border-white shadow-[0_18px_45px_rgba(0,0,0,0.45)] -translate-y-1'
+                    : 'border-white/30 hover:border-white/70'
+                }`}
+              >
+                <div className="relative h-[210px] md:h-[250px]">
+                  <img
+                    src={section.image}
+                    alt={section.title}
+                    className={`w-full h-full object-cover transition-all duration-500 ${isSelected ? 'scale-105' : 'grayscale-[35%]'}`}
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <div className="absolute bottom-3 left-3 right-3">
+                    <p className="text-[11px] tracking-widest uppercase font-bold text-white/75">Image {section.id}</p>
+                    <h4 className="text-white text-xl font-bold leading-tight">{section.title}</h4>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-8">
           <div
-            key={section.id}
-            onMouseEnter={() => setHoveredIndex(index)}
-            onClick={() => setHoveredIndex(index)}
-            className={`relative overflow-hidden group cursor-pointer border-b lg:border-b-0 lg:border-l border-black/10 first:border-l-0 transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${isActive ? 'flex-[10] lg:flex-[5] min-h-[400px] lg:min-h-0' : 'flex-[1] lg:flex-[0.5] min-h-[80px] lg:min-h-0'}`}
+            ref={textRevealRef}
+            className="max-w-3xl rounded-[1.8rem] border border-white/25 bg-white/10 backdrop-blur-sm p-6 md:p-8"
           >
-            {isActive ? (
-              <div className="flex flex-col lg:flex-row h-full w-full p-6 md:p-8 lg:p-12 gap-6 md:gap-12 items-center">
-                <div className="w-full lg:w-1/3 space-y-4 md:space-y-8">
-                  <h3 className="text-2xl md:text-3xl font-bold text-black">{section.title}</h3>
-                  <p className="text-gray-600 text-base md:text-lg leading-relaxed">{section.desc}</p>
-                </div>
-                <div className="flex-1 relative h-[300px] lg:h-full w-full">
-                  <div className="absolute inset-0 rounded-[2rem] md:rounded-[3rem] overflow-hidden shadow-2xl">
-                    <img
-                      src={section.image}
-                      alt={section.title}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                    {/* Number Overlay */}
-                    <div className="absolute bottom-0 right-0 bg-white p-6 md:p-10 rounded-tl-[2rem] md:rounded-tl-[3rem] flex flex-col items-end">
-                      <span className="text-5xl md:text-7xl font-bold text-black leading-none">{section.id}</span>
-                      <span className="text-sm md:text-base font-bold text-black mt-2">{section.title}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="h-full w-full flex flex-row lg:flex-col items-center justify-between lg:justify-start p-6 lg:pt-12 gap-4 lg:gap-12">
-                <div className="flex items-center gap-2">
-                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300 -rotate-45 lg:rotate-0">
-                    <line x1="19" y1="12" x2="5" y2="12"></line>
-                    <polyline points="12 19 5 12 12 5"></polyline>
-                  </svg>
-                </div>
-                <div className="flex flex-row lg:flex-col items-center gap-4 lg:gap-6">
-                  <span className="text-3xl lg:text-5xl font-bold text-gray-200">{section.id}</span>
-                  <div className="lg:[writing-mode:vertical-lr] lg:rotate-180 text-xs lg:text-base font-bold tracking-[0.2em] lg:tracking-[0.4em] text-gray-300 whitespace-nowrap uppercase">
-                    {section.label}
-                  </div>
-                </div>
-              </div>
-            )}
+            <p className="text-xs tracking-[0.2em] uppercase font-extrabold text-white/75 mb-2">
+              {activeSection.id} {activeSection.label}
+            </p>
+            <h3 className="text-3xl md:text-4xl font-bold text-white mb-4">{activeSection.title}</h3>
+            <p className="text-white/90 text-base md:text-lg leading-relaxed">{activeSection.desc}</p>
           </div>
-        );
-      })}
+        </div>
+      </div>
     </div>
   );
 };
