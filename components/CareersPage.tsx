@@ -26,6 +26,14 @@ const CareersPage: React.FC = () => {
     project: '',
     experience: ''
   });
+  const projectOptions = [
+    'Casual Video Models (Video Data Collection)',
+    'Moderator & Voice Participants (Voice Data Collection)',
+    'Data Annotator (Iphone User)',
+    'Image Data Collector (Capturing Text - Rich Items)',
+    'Data Curation (Genealogy Project)',
+    'Intern (Applicant to PH only)',
+  ];
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -558,19 +566,27 @@ const CareersPage: React.FC = () => {
 
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-[#002D21]">Project Applied For *</label>
-                <select
-                  name="project"
-                  value={formData.project}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-4 py-3 bg-[#F8F5F0] border-none rounded-lg focus:ring-2 focus:ring-lw-green/20 outline-none transition-all appearance-none cursor-pointer"
-                >
-                  <option value="">Select a project</option>
-                  <option value="Computer Vision">Computer Vision</option>
-                  <option value="Natural Language Processing">Natural Language Processing</option>
-                  <option value="Machine Learning">Machine Learning</option>
-                  <option value="Genealogy Data Processing">Genealogy Data Processing</option>
-                </select>
+                <div className="relative">
+                  <select
+                    name="project"
+                    value={formData.project}
+                    onChange={handleChange}
+                    required
+                    className="w-full px-4 pr-12 py-3 bg-[#F8F5F0] border-none rounded-lg focus:ring-2 focus:ring-lw-green/20 outline-none transition-all appearance-none cursor-pointer"
+                  >
+                    <option value="">Select a project</option>
+                    {projectOptions.map((projectOption) => (
+                      <option key={projectOption} value={projectOption}>
+                        {projectOption}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[#002D21]/60">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </span>
+                </div>
               </div>
 
               <div className="space-y-2">
