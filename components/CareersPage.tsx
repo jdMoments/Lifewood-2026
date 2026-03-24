@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import Ballpit from './Ballpit';
 import { supabase } from '../lib/supabase';
@@ -29,9 +29,116 @@ const CareersPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [isCheckingEmailExists, setIsCheckingEmailExists] = useState(false);
+  const [isEmailExists, setIsEmailExists] = useState(false);
+  const [ageValidationMessage, setAgeValidationMessage] = useState('');
+  const [phoneValidationMessage, setPhoneValidationMessage] = useState('');
+  const emailFieldRef = useRef<HTMLDivElement | null>(null);
+  const phoneFieldRef = useRef<HTMLDivElement | null>(null);
+
+  const checkExistingApplicationEmail = async (candidateEmail: string) => {
+    const normalizedEmail = candidateEmail.trim().toLowerCase();
+    if (!normalizedEmail) return false;
+
+    const { data: rpcExists, error: rpcError } = await supabase.rpc('application_email_exists', {
+      candidate_email: normalizedEmail,
+    });
+    if (!rpcError) {
+      return rpcExists === true;
+    }
+
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from('applications')
+      .select('id')
+      .eq('email', normalizedEmail)
+      .limit(1);
+
+    if (fallbackError) {
+      throw fallbackError;
+    }
+
+    return Array.isArray(fallbackData) && fallbackData.length > 0;
+  };
+
+  React.useEffect(() => {
+    const rawAge = formData.age.trim();
+    if (!rawAge) {
+      setAgeValidationMessage('');
+      return;
+    }
+
+    const parsedAge = Number.parseInt(rawAge, 10);
+    if (Number.isNaN(parsedAge) || parsedAge < 18 || parsedAge > 60) {
+      setAgeValidationMessage('Age must be 18-60');
+      return;
+    }
+
+    setAgeValidationMessage('');
+  }, [formData.age]);
+
+  React.useEffect(() => {
+    const digitsOnlyPhone = formData.phoneNumber.replace(/\D/g, '');
+    if (!digitsOnlyPhone) {
+      setPhoneValidationMessage('');
+      return;
+    }
+
+    if (digitsOnlyPhone.length < 11) {
+      setPhoneValidationMessage('Phone number must be at least 11 digits');
+      return;
+    }
+
+    setPhoneValidationMessage('');
+  }, [formData.phoneNumber]);
+
+  const scrollToField = (targetRef: React.RefObject<HTMLDivElement>) => {
+    targetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  React.useEffect(() => {
+    const normalizedEmail = formData.email.trim().toLowerCase();
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!normalizedEmail || !emailPattern.test(normalizedEmail)) {
+      setIsCheckingEmailExists(false);
+      setIsEmailExists(false);
+      return;
+    }
+
+    let isActive = true;
+    const timer = window.setTimeout(async () => {
+      setIsCheckingEmailExists(true);
+      let emailExists = false;
+      let checkFailed = false;
+      try {
+        emailExists = await checkExistingApplicationEmail(normalizedEmail);
+      } catch (error) {
+        checkFailed = true;
+        console.error('Error checking existing applicant email:', error);
+      }
+      if (!isActive) return;
+      setIsCheckingEmailExists(false);
+
+      if (checkFailed) {
+        setIsEmailExists(false);
+        return;
+      }
+
+      setIsEmailExists(emailExists === true);
+    }, 350);
+
+    return () => {
+      isActive = false;
+      window.clearTimeout(timer);
+    };
+  }, [formData.email]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
+    const { name } = e.target;
+    const value = name === 'phoneNumber' ? e.target.value.replace(/\D/g, '') : e.target.value;
+    if (name === 'email' || name === 'age' || name === 'phoneNumber') {
+      setStatus(null);
+    }
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
@@ -41,6 +148,35 @@ const CareersPage: React.FC = () => {
     setStatus(null);
 
     try {
+      const parsedAge = Number.parseInt(formData.age, 10);
+      if (Number.isNaN(parsedAge) || parsedAge < 18 || parsedAge > 60) {
+        setStatus({ type: 'error', message: 'Age must be 18-60' });
+        setLoading(false);
+        return;
+      }
+
+      const digitsOnlyPhone = formData.phoneNumber.replace(/\D/g, '');
+      if (digitsOnlyPhone.length < 11) {
+        setStatus({ type: 'error', message: 'Phone number must be at least 11 digits' });
+        scrollToField(phoneFieldRef);
+        setLoading(false);
+        return;
+      }
+
+      if (isCheckingEmailExists) {
+        setStatus({ type: 'error', message: 'Checking email. Please wait.' });
+        scrollToField(emailFieldRef);
+        setLoading(false);
+        return;
+      }
+
+      if (isEmailExists) {
+        setStatus({ type: 'error', message: 'Email Already Exist' });
+        scrollToField(emailFieldRef);
+        setLoading(false);
+        return;
+      }
+
       let uploadedResumeUrl: string | null = null;
       let resumeUploadNotice = '';
       if (resumeFile) {
@@ -58,14 +194,22 @@ const CareersPage: React.FC = () => {
 
       const normalizedEmail = formData.email.trim().toLowerCase();
       const normalizedProject = formData.project.trim();
-      const normalizedPhoneNumber = formData.phoneNumber.trim();
+      const normalizedPhoneNumber = formData.phoneNumber.replace(/\D/g, '');
       const normalizedPhone = normalizedPhoneNumber ? `${formData.phoneCountryCode} ${normalizedPhoneNumber}` : null;
-
-      const { data: emailExists, error: emailValidationError } = await supabase.rpc('application_email_exists', {
-        candidate_email: normalizedEmail,
-      });
-      if (!emailValidationError && emailExists === true) {
-        setStatus({ type: 'error', message: 'Email is Already Exist' });
+      let emailExists = false;
+      try {
+        emailExists = await checkExistingApplicationEmail(normalizedEmail);
+      } catch (error: any) {
+        console.error('Error validating email before submit:', error);
+        setStatus({ type: 'error', message: 'Unable to validate email right now. Please try again.' });
+        scrollToField(emailFieldRef);
+        setLoading(false);
+        return;
+      }
+      if (emailExists) {
+        setStatus({ type: 'error', message: 'Email Already Exist' });
+        setIsEmailExists(true);
+        scrollToField(emailFieldRef);
         setLoading(false);
         return;
       }
@@ -77,7 +221,7 @@ const CareersPage: React.FC = () => {
           last_name: formData.lastName.trim(),
           email: normalizedEmail,
           phone: normalizedPhone,
-          age: parseInt(formData.age, 10) || null,
+          age: parsedAge,
           degree: formData.degree.trim(),
           project_applied: normalizedProject,
           experience: formData.experience.trim(),
@@ -100,10 +244,13 @@ const CareersPage: React.FC = () => {
         experience: ''
       });
       setResumeFile(null);
+      setIsEmailExists(false);
     } catch (err: any) {
       console.error('Error submitting application:', err);
       if (isDuplicateApplicationEmailError(err)) {
-        setStatus({ type: 'error', message: 'Email is Already Exist' });
+        setStatus({ type: 'error', message: 'Email Already Exist' });
+        setIsEmailExists(true);
+        scrollToField(emailFieldRef);
       } else {
         setStatus({ type: 'error', message: err.message || 'Failed to submit application.' });
       }
@@ -111,6 +258,8 @@ const CareersPage: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const isSubmitBlocked = loading || isCheckingEmailExists || Boolean(ageValidationMessage) || Boolean(phoneValidationMessage);
 
   const handleResumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
@@ -316,16 +465,25 @@ const CareersPage: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-[#002D21]">Age</label>
+                  {ageValidationMessage ? (
+                    <p className="text-xs font-semibold text-red-600">{ageValidationMessage}</p>
+                  ) : null}
                   <input
                     type="number"
                     name="age"
                     value={formData.age}
                     onChange={handleChange}
+                    min={18}
+                    max={60}
+                    required
                     className="w-full px-4 py-3 bg-[#F8F5F0] border-none rounded-lg focus:ring-2 focus:ring-lw-green/20 outline-none transition-all"
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2" ref={emailFieldRef}>
                   <label className="text-sm font-semibold text-[#002D21]">Email Address *</label>
+                  {isEmailExists ? (
+                    <p className="text-xs font-semibold text-red-600">Email Already Exist</p>
+                  ) : null}
                   <input
                     type="email"
                     name="email"
@@ -337,8 +495,11 @@ const CareersPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2" ref={phoneFieldRef}>
                 <label className="text-sm font-semibold text-[#002D21]">Phone Number *</label>
+                {phoneValidationMessage ? (
+                  <p className="text-xs font-semibold text-red-600">{phoneValidationMessage}</p>
+                ) : null}
                 <div className="grid grid-cols-1 sm:grid-cols-[220px_1fr] gap-3">
                   <select
                     name="phoneCountryCode"
@@ -353,12 +514,15 @@ const CareersPage: React.FC = () => {
                     <option value="+81">+81 (Japan)</option>
                   </select>
                   <input
-                    type="tel"
+                    type="text"
                     name="phoneNumber"
                     value={formData.phoneNumber}
                     onChange={handleChange}
                     required
-                    placeholder="912345678"
+                    inputMode="numeric"
+                    pattern="[0-9]{11,}"
+                    minLength={11}
+                    placeholder="09123456789"
                     className="w-full px-4 py-3 bg-[#F8F5F0] border-none rounded-lg focus:ring-2 focus:ring-lw-green/20 outline-none transition-all"
                   />
                 </div>
@@ -422,7 +586,7 @@ const CareersPage: React.FC = () => {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={isSubmitBlocked}
                 className="w-full py-4 bg-lw-green text-white rounded-lg font-bold text-lg hover:bg-lw-green/90 transition-all shadow-lg shadow-lw-green/20 disabled:opacity-50"
               >
                 {loading ? 'Submitting...' : 'Submit Application'}

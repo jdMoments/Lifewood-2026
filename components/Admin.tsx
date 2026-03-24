@@ -289,6 +289,8 @@ const CONTACT_MESSAGE_TABLE = 'inbox_messages' as const;
 const INBOX_READ_STORAGE_KEY = 'lifewood_admin_inbox_read_v1';
 const INBOX_REPLY_STORAGE_KEY = 'lifewood_admin_inbox_reply_v1';
 const HIRED_STATUS_OVERRIDE_STORAGE_KEY = 'lifewood_admin_hired_status_override_v1';
+const HISTORY_HIDDEN_ACCOUNT_STORAGE_KEY = 'lifewood_admin_hidden_account_history_v1';
+const HISTORY_HIDDEN_PROJECT_STORAGE_KEY = 'lifewood_admin_hidden_project_history_v1';
 
 const Admin: React.FC = () => {
   const { user, loading: authLoading, signOut: authSignOut } = useAuth();
@@ -316,6 +318,7 @@ const Admin: React.FC = () => {
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const [applications, setApplications] = useState<AdminApplicationItem[]>([]);
   const [selectedApplicant, setSelectedApplicant] = useState<AdminApplicationItem | null>(null);
+  const [pendingApplicantNameSearch, setPendingApplicantNameSearch] = useState('');
   const [processedApplicantStatusFilter, setProcessedApplicantStatusFilter] = useState<'all' | 'accepted' | 'declined'>('all');
   const [processedApplicantNameSearch, setProcessedApplicantNameSearch] = useState('');
   const [selectedProcessedApplicantId, setSelectedProcessedApplicantId] = useState('');
@@ -422,6 +425,8 @@ const Admin: React.FC = () => {
   const [settingsSecurityNotice, setSettingsSecurityNotice] = useState('');
   const [accountHistoryRows, setAccountHistoryRows] = useState<AccountHistoryItem[]>([]);
   const [projectHistoryRows, setProjectHistoryRows] = useState<ProjectHistoryItem[]>([]);
+  const [hiddenAccountHistoryIds, setHiddenAccountHistoryIds] = useState<string[]>([]);
+  const [hiddenProjectHistoryIds, setHiddenProjectHistoryIds] = useState<string[]>([]);
   const [loginActivityRows, setLoginActivityRows] = useState<LoginActivityItem[]>([]);
   const [isMfaAppEnabled, setIsMfaAppEnabled] = useState(false);
   const [isMfaSmsEnabled, setIsMfaSmsEnabled] = useState(false);
@@ -533,6 +538,30 @@ const Admin: React.FC = () => {
     } catch (error) {
       console.warn('Unable to restore hired status overrides:', error);
     }
+
+    try {
+      const storedHiddenAccountRows = window.localStorage.getItem(HISTORY_HIDDEN_ACCOUNT_STORAGE_KEY);
+      if (storedHiddenAccountRows) {
+        const parsed = JSON.parse(storedHiddenAccountRows);
+        if (Array.isArray(parsed)) {
+          setHiddenAccountHistoryIds(parsed.filter((value) => typeof value === 'string'));
+        }
+      }
+    } catch (error) {
+      console.warn('Unable to restore hidden account history rows:', error);
+    }
+
+    try {
+      const storedHiddenProjectRows = window.localStorage.getItem(HISTORY_HIDDEN_PROJECT_STORAGE_KEY);
+      if (storedHiddenProjectRows) {
+        const parsed = JSON.parse(storedHiddenProjectRows);
+        if (Array.isArray(parsed)) {
+          setHiddenProjectHistoryIds(parsed.filter((value) => typeof value === 'string'));
+        }
+      }
+    } catch (error) {
+      console.warn('Unable to restore hidden project history rows:', error);
+    }
   }, []);
 
   useEffect(() => {
@@ -558,6 +587,22 @@ const Admin: React.FC = () => {
       console.warn('Unable to persist hired status overrides:', error);
     }
   }, [hiredStatusOverrideIds]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(HISTORY_HIDDEN_ACCOUNT_STORAGE_KEY, JSON.stringify(hiddenAccountHistoryIds));
+    } catch (error) {
+      console.warn('Unable to persist hidden account history rows:', error);
+    }
+  }, [hiddenAccountHistoryIds]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(HISTORY_HIDDEN_PROJECT_STORAGE_KEY, JSON.stringify(hiddenProjectHistoryIds));
+    } catch (error) {
+      console.warn('Unable to persist hidden project history rows:', error);
+    }
+  }, [hiddenProjectHistoryIds]);
 
   const userGrowthData = [
     { name: 'Jan', users: 40 },
@@ -893,102 +938,46 @@ const Admin: React.FC = () => {
   };
 
   const handleDeleteAccountHistoryEntry = async (row: AccountHistoryItem) => {
-    const source = asCleanText(row.source).toLowerCase();
-    const referenceId = asCleanText(row.reference_id);
     const rowId = asCleanText(row.id);
 
     setHistoryDeleteActionKey(`account:${row.id}`);
     setSettingsHistoryNotice('');
 
     try {
-      if (referenceId && isLikelyUuid(referenceId)) {
-        if (source === 'application') {
-          const { error } = await supabase.from('applications').delete().eq('id', referenceId);
-          if (error) throw error;
-        } else if (source === 'profile') {
-          const { error } = await supabase.from('profiles').delete().eq('id', referenceId);
-          if (error) throw error;
-        }
+      if (!rowId) {
+        setSettingsHistoryNotice('Unable to remove this row from the UI right now.');
+        return;
       }
 
-      if (rowId && !rowId.startsWith('fallback-') && isLikelyUuid(rowId)) {
-        const { error } = await supabase.from('admin_account_history').delete().eq('id', rowId);
-        if (error && !isMissingTableError(error, 'admin_account_history')) {
-          throw error;
-        }
-      }
-
-      if (referenceId && isLikelyUuid(referenceId)) {
-        const query = supabase
-          .from('admin_account_history')
-          .delete()
-          .eq('reference_id', referenceId);
-        const scopedQuery = source ? query.eq('source', source) : query;
-        const { error } = await scopedQuery;
-        if (error && !isMissingTableError(error, 'admin_account_history')) {
-          throw error;
-        }
-      }
-
-      await fetchSettingsHistory();
-      setSettingsHistoryNotice('History entry and linked account data deleted successfully.');
+      setHiddenAccountHistoryIds((prev) => (prev.includes(rowId) ? prev : [...prev, rowId]));
+      setAccountHistoryRows((prev) => prev.filter((item) => asCleanText(item.id) !== rowId));
+      setSettingsHistoryNotice('History row removed from UI only. Database records were not deleted.');
     } catch (error) {
-      console.error('Error deleting account history entry:', error);
-      setSettingsHistoryNotice('Unable to delete this account history record right now.');
+      console.error('Error removing account history entry from UI:', error);
+      setSettingsHistoryNotice('Unable to remove this row from the UI right now.');
     } finally {
       setHistoryDeleteActionKey(null);
     }
   };
 
   const handleDeleteProjectHistoryEntry = async (row: ProjectHistoryItem) => {
-    const sourceTable = asCleanText(row.source_table) as ProjectSubmissionItem['source_table'];
-    const referenceId = asCleanText(row.reference_id);
     const rowId = asCleanText(row.id);
 
     setHistoryDeleteActionKey(`project:${row.id}`);
     setSettingsHistoryNotice('');
 
     try {
-      if (referenceId && isLikelyUuid(referenceId)) {
-        const preferredTables = sourceTable
-          ? [sourceTable, ...PROJECT_SUBMISSION_TABLE_CANDIDATES.filter((candidate) => candidate !== sourceTable)]
-          : [...PROJECT_SUBMISSION_TABLE_CANDIDATES];
-
-        for (const tableName of preferredTables) {
-          const { error } = await supabase.from(tableName).delete().eq('id', referenceId);
-          if (error) {
-            if (isMissingProjectSubmissionTableError(error)) {
-              continue;
-            }
-            throw error;
-          }
-        }
+      if (!rowId) {
+        setSettingsHistoryNotice('Unable to remove this row from the UI right now.');
+        return;
       }
 
-      if (rowId && !rowId.startsWith('fallback-') && isLikelyUuid(rowId)) {
-        const { error } = await supabase.from('admin_project_history').delete().eq('id', rowId);
-        if (error && !isMissingTableError(error, 'admin_project_history')) {
-          throw error;
-        }
-      }
-
-      if (referenceId && isLikelyUuid(referenceId)) {
-        const query = supabase
-          .from('admin_project_history')
-          .delete()
-          .eq('reference_id', referenceId);
-        const scopedQuery = sourceTable ? query.eq('source_table', sourceTable) : query;
-        const { error } = await scopedQuery;
-        if (error && !isMissingTableError(error, 'admin_project_history')) {
-          throw error;
-        }
-      }
-
-      await fetchSettingsHistory();
-      setSettingsHistoryNotice('History entry and linked project data deleted successfully.');
+      setHiddenProjectHistoryIds((prev) => (prev.includes(rowId) ? prev : [...prev, rowId]));
+      setProjectHistoryRows((prev) => prev.filter((item) => asCleanText(item.id) !== rowId));
+      setSettingsHistoryNotice('History row removed from UI only. Database records were not deleted.');
     } catch (error) {
-      console.error('Error deleting project history entry:', error);
-      setSettingsHistoryNotice('Unable to delete this project history record right now.');
+      console.error('Error removing project history entry from UI:', error);
+      setSettingsHistoryNotice('Unable to remove this row from the UI right now.');
     } finally {
       setHistoryDeleteActionKey(null);
     }
@@ -1010,12 +999,12 @@ const Admin: React.FC = () => {
     setHistoryDeleteTarget({
       kind: 'account',
       row,
-      title: 'Confirm Account Deletion',
+      title: 'Remove Account Row from UI',
       message:
-        `Delete "${targetName}" from History?\n\n` +
-        `This will permanently delete linked data from ${sourceLabel} (if found) and remove its history logs.\n` +
+        `Remove "${targetName}" from History view?\n\n` +
+        `This only hides the row in this admin UI. Data in ${sourceLabel} and history logs will remain in the database.\n` +
         `Action type: ${actionLabel.toUpperCase()}.\n\n` +
-        'This cannot be undone.',
+        'You can restore it later by clearing local browser storage.',
     });
   };
 
@@ -1026,12 +1015,12 @@ const Admin: React.FC = () => {
     setHistoryDeleteTarget({
       kind: 'project',
       row,
-      title: 'Confirm Project Deletion',
+      title: 'Remove Project Row from UI',
       message:
-        `Delete "${projectTitle}" from History?\n\n` +
-        'This will permanently delete the linked project record from Projects (if found) and remove its history logs.\n' +
+        `Remove "${projectTitle}" from History view?\n\n` +
+        'This only hides the row in this admin UI. Project and history records remain in the database.\n' +
         `Action type: ${actionLabel.toUpperCase()}.\n\n` +
-        'This cannot be undone.',
+        'You can restore it later by clearing local browser storage.',
     });
   };
 
@@ -3790,8 +3779,17 @@ const Admin: React.FC = () => {
     0
   );
   const pendingApplications = applications.filter((app) => normalizeApplicationStatus(app.status) === 'pending');
+  const filteredPendingApplications = pendingApplications.filter((app) => {
+    const query = pendingApplicantNameSearch.trim().toLowerCase();
+    if (!query) return true;
+    const fullName = `${asCleanText(app.first_name)} ${asCleanText(app.last_name)}`.trim().toLowerCase();
+    const email = asCleanText(app.email).toLowerCase();
+    const project = asCleanText(getApplicantPositionLabel(app)).toLowerCase();
+    return fullName.includes(query) || email.includes(query) || project.includes(query);
+  });
   const declinedApplications = applications.filter((app) => normalizeApplicationStatus(app.status) === 'declined');
   const acceptedApplications = applications.filter((app) => normalizeApplicationStatus(app.status) === 'accepted');
+  const hiredApplications = applications.filter((app) => normalizeApplicationStatus(app.status) === 'hired');
   const selectedApplicantStatus = selectedApplicant ? normalizeApplicationStatus(selectedApplicant.status) : 'pending';
   const isPendingApplicantModal = selectedApplicantStatus === 'pending';
   const applicantModalLabelClass = isPendingApplicantModal
@@ -3873,12 +3871,16 @@ const Admin: React.FC = () => {
   ];
   const accountHistoryTableRows = accountHistoryRows.filter((row) => {
     const action = (row.action || '').toString().toLowerCase();
-    return action === 'archived' || action === 'deleted';
+    const rowId = asCleanText(row.id);
+    if (!rowId) return false;
+    return (action === 'archived' || action === 'deleted') && !hiddenAccountHistoryIds.includes(rowId);
   });
   const projectHistoryTableRows = projectHistoryRows.filter(
     (row) => {
       const action = (row.action || '').toString().toLowerCase();
-      return action === 'declined' || action === 'deleted';
+      const rowId = asCleanText(row.id);
+      if (!rowId) return false;
+      return (action === 'declined' || action === 'deleted') && !hiddenProjectHistoryIds.includes(rowId);
     }
   );
   const activeHistoryDeleteKey = historyDeleteTarget ? `${historyDeleteTarget.kind}:${historyDeleteTarget.row.id}` : '';
@@ -6479,21 +6481,16 @@ const Admin: React.FC = () => {
           </div>
         ) : activeTab === 'Applicants' ? (
           <div className="space-y-8">
-            <div className="flex justify-between items-center mb-6">
-              <div className="inline-block bg-white rounded-2xl border border-black/5 px-5 py-3 shadow-sm">
-                <h2 className="text-3xl font-bold text-[#123f2f]">New Applicants</h2>
-              </div>
-              {applicantActionNotice &&
-              (applicantActionNotice.toLowerCase().includes('unable') ||
-                applicantActionNotice.toLowerCase().includes('not sent') ||
-                applicantActionNotice.toLowerCase().includes('please') ||
-                applicantActionNotice.toLowerCase().includes('invalid') ||
-                applicantActionNotice.toLowerCase().includes('missing')) ? (
-                <p className={`text-xs font-semibold ${darkMode ? 'text-orange-300' : 'text-orange-600'}`}>
-                  {applicantActionNotice}
-                </p>
-              ) : null}
-            </div>
+            {applicantActionNotice &&
+            (applicantActionNotice.toLowerCase().includes('unable') ||
+              applicantActionNotice.toLowerCase().includes('not sent') ||
+              applicantActionNotice.toLowerCase().includes('please') ||
+              applicantActionNotice.toLowerCase().includes('invalid') ||
+              applicantActionNotice.toLowerCase().includes('missing')) ? (
+              <p className={`text-xs font-semibold ${darkMode ? 'text-orange-300' : 'text-orange-600'}`}>
+                {applicantActionNotice}
+              </p>
+            ) : null}
 
             <AnimatePresence>
               {applicantSuccessPopup && (
@@ -6528,7 +6525,7 @@ const Admin: React.FC = () => {
               )}
             </AnimatePresence>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div className={`rounded-[32px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:border-orange-500/40' : 'bg-white border-black/5 hover:border-orange-500/20'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-orange-500/10 text-orange-300' : 'bg-orange-50 text-orange-600'}`}>
@@ -6561,14 +6558,50 @@ const Admin: React.FC = () => {
                 <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Accepted Applicants</p>
                 <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{acceptedApplications.length}</h3>
               </div>
+
+              <div className={`rounded-[32px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:border-sky-500/40' : 'bg-white border-black/5 hover:border-sky-500/20'}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-sky-500/10 text-sky-300' : 'bg-sky-50 text-sky-600'}`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h16"/><path d="M8 16V8"/><path d="M12 16V4"/><path d="M16 16v-6"/></svg>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-sky-300 bg-sky-500/20' : 'text-sky-600 bg-sky-50'}`}>Hired</span>
+                </div>
+                <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Hired Applicants</p>
+                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{hiredApplications.length}</h3>
+              </div>
             </div>
 
             <div className={`rounded-[40px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
-              <div className="flex items-center justify-between mb-6">
-                <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Pending Applicants</h3>
-                <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-orange-300' : 'text-orange-600'}`}>
-                  {pendingApplications.length} pending
-                </span>
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-8">
+                <div>
+                  <h3 className={`text-3xl font-extrabold leading-tight ${darkMode ? 'text-slate-100' : 'text-[#123f2f]'}`}>New Applicants</h3>
+                  <p className={`text-sm font-semibold mt-1 ${darkMode ? 'text-slate-300' : 'text-gray-600'}`}>Pending Applicants</p>
+                </div>
+                <div className="flex items-center gap-2 lg:ml-auto">
+                  <div className={`group flex items-center h-10 rounded-xl border overflow-hidden transition-all ${
+                    darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'
+                  }`}>
+                    <div className={`w-10 h-10 inline-flex items-center justify-center ${darkMode ? 'text-slate-300' : 'text-gray-500'}`} title="Search pending applicants">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.3-4.3"/>
+                      </svg>
+                    </div>
+                    <input
+                      type="text"
+                      value={pendingApplicantNameSearch}
+                      onChange={(e) => setPendingApplicantNameSearch(e.target.value)}
+                      placeholder="Search name..."
+                      className={`w-0 px-0 opacity-0 group-hover:w-44 group-hover:px-3 group-hover:opacity-100 focus:w-44 focus:px-3 focus:opacity-100 transition-all duration-200 text-sm h-10 border-0 focus:outline-none ${
+                        darkMode ? 'bg-slate-900 text-slate-100 placeholder:text-slate-500' : 'bg-white text-gray-900 placeholder:text-gray-400'
+                      }`}
+                    />
+                  </div>
+
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-orange-300' : 'text-orange-600'}`}>
+                    {filteredPendingApplications.length} pending
+                  </span>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -6583,7 +6616,7 @@ const Admin: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingApplications.map((app) => (
+                    {filteredPendingApplications.map((app) => (
                       <tr key={app.id} className={`border-b transition-colors ${darkMode ? 'border-slate-700' : 'border-black/5'} [&>td]:transition-colors [&:hover>td]:bg-[#f5eedb]`}>
                         <td className={`py-4 font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{app.first_name} {app.last_name}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.email}</td>
@@ -6601,7 +6634,7 @@ const Admin: React.FC = () => {
                         </td>
                       </tr>
                     ))}
-                    {pendingApplications.length === 0 && (
+                    {filteredPendingApplications.length === 0 && (
                       <tr>
                         <td colSpan={6} className={`py-12 text-center italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>No pending applications</td>
                       </tr>
@@ -6840,9 +6873,6 @@ const Admin: React.FC = () => {
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                   <div>
                     <h4 className={`text-lg font-bold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>AI Lifewood Analysis</h4>
-                    <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
-                      Click a row in Processed Applicants to generate a 2-sentence AI summary.
-                    </p>
                   </div>
                   {selectedProcessedApplicant ? (
                     <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-slate-800 text-slate-200' : 'bg-white text-gray-700 border border-gray-200'}`}>
@@ -6851,25 +6881,36 @@ const Admin: React.FC = () => {
                   ) : null}
                 </div>
 
-                {isLoadingProcessedApplicantAi ? (
-                  <div className="py-8 flex items-center gap-3">
-                    <span className="inline-block w-5 h-5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-                    <p className={`text-sm font-medium ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>Analyzing CV with AI Lifewood...</p>
+                <div className={`rounded-2xl border p-4 ${darkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-white border-gray-200'}`}>
+                  <div className="mb-3">
+                    <img
+                      src="https://framerusercontent.com/images/BZSiFYgRc4wDUAuEybhJbZsIBQY.png?width=1519&height=429"
+                      alt="Lifewood"
+                      className="h-4 w-auto object-contain"
+                      referrerPolicy="no-referrer"
+                    />
                   </div>
-                ) : processedApplicantAiAnalysis && processedApplicantSummarySentences ? (
-                  <div className={`rounded-2xl border p-4 ${darkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-white border-gray-200'}`}>
-                    <p className={`text-sm leading-relaxed ${darkMode ? 'text-slate-200' : 'text-gray-800'}`}>
-                      {processedApplicantSummarySentences[0]}
+
+                  {isLoadingProcessedApplicantAi ? (
+                    <div className="py-6 flex items-center gap-3">
+                      <span className="inline-block w-5 h-5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+                      <p className={`text-sm font-medium ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>Analyzing CV with AI Lifewood...</p>
+                    </div>
+                  ) : processedApplicantAiAnalysis && processedApplicantSummarySentences ? (
+                    <>
+                      <p className={`text-sm leading-relaxed ${darkMode ? 'text-slate-200' : 'text-gray-800'}`}>
+                        {processedApplicantSummarySentences[0]}
+                      </p>
+                      <p className={`text-sm leading-relaxed mt-2 font-semibold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                        {processedApplicantSummarySentences[1]}
+                      </p>
+                    </>
+                  ) : (
+                    <p className={`py-6 text-sm italic ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                      AI summary will appear here.
                     </p>
-                    <p className={`text-sm leading-relaxed mt-2 font-semibold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
-                      {processedApplicantSummarySentences[1]}
-                    </p>
-                  </div>
-                ) : (
-                  <p className={`py-8 text-sm italic ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
-                    Select one processed applicant row to run AI Lifewood analysis.
-                  </p>
-                )}
+                  )}
+                </div>
 
                 {processedApplicantAiNotice ? (
                   <p className={`mt-3 text-xs font-semibold ${processedApplicantAiNotice.toLowerCase().includes('unable') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-700')}`}>
@@ -7368,69 +7409,73 @@ const Admin: React.FC = () => {
           </div>
         ) : activeTab === 'Inbox' ? (
           <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <h2 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-[#123f2f]'}`}>Inbox</h2>
-                <p className={`${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
-                  Contact Us form submissions from Supabase.
-                </p>
-                <p className={`text-xs mt-1 font-semibold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
-                  {filteredInboxMessages.length} record{filteredInboxMessages.length === 1 ? '' : 's'}
-                </p>
-                {inboxSourceDebug.length > 0 ? (
-                  <p className={`mt-1 text-[11px] ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
-                    {inboxSourceDebug
-                      .map((sourceItem) =>
-                        `${sourceItem.table}: ${sourceItem.rows}${sourceItem.error ? ` (${sourceItem.error})` : ''}`
-                      )
-                      .join(' | ')}
+            <div className={`rounded-[28px] border p-4 md:p-5 shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <h2 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-[#123f2f]'}`}>Inbox</h2>
+                  <p className={`${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                    Contact Us Messages
                   </p>
-                ) : null}
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={inboxSearchTerm}
-                  onChange={(e) => setInboxSearchTerm(e.target.value)}
-                  placeholder="Search name..."
-                  className={`h-10 w-72 rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
-                    darkMode ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder:text-slate-500' : 'bg-white border-gray-200 text-gray-900 placeholder:text-gray-400'
-                  }`}
-                />
-                {inboxNotice ? (
-                  <p className={`text-xs font-semibold ${inboxNotice.toLowerCase().includes('unable') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-700')}`}>
-                    {inboxNotice}
+                  <p className={`text-xs mt-1 font-semibold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                    {filteredInboxMessages.length} record{filteredInboxMessages.length === 1 ? '' : 's'}
                   </p>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={fetchContactMessages}
-                  className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-white border-black/10 text-gray-600 hover:bg-gray-50'}`}
-                  title="Refresh inbox"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-                </button>
+                  {inboxSourceDebug.length > 0 ? (
+                    <p className={`mt-1 text-[11px] ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                      {inboxSourceDebug
+                        .map((sourceItem) =>
+                          `${sourceItem.table}: ${sourceItem.rows}${sourceItem.error ? ` (${sourceItem.error})` : ''}`
+                        )
+                        .join(' | ')}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={inboxSearchTerm}
+                    onChange={(e) => setInboxSearchTerm(e.target.value)}
+                    placeholder="Search name..."
+                    className={`h-10 w-72 rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
+                      darkMode ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder:text-slate-500' : 'bg-white border-gray-200 text-gray-900 placeholder:text-gray-400'
+                    }`}
+                  />
+                  {inboxNotice ? (
+                    <p className={`text-xs font-semibold ${inboxNotice.toLowerCase().includes('unable') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-700')}`}>
+                      {inboxNotice}
+                    </p>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={fetchContactMessages}
+                    className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-white border-black/10 text-gray-600 hover:bg-gray-50'}`}
+                    title="Refresh inbox"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-4">
-              <aside className={`rounded-[28px] border p-4 shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
-                <p className={`text-[10px] font-bold uppercase tracking-widest mb-3 ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+            <div className="grid grid-cols-1 xl:grid-cols-[330px_1fr] gap-4">
+              <aside className="rounded-[30px] border border-[#9CFCC1] bg-[#046241] p-5 shadow-[0_24px_55px_-25px_rgba(4,98,65,0.95)]">
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] mb-3 text-[#d7ffe8]">
                   Inbox Names
                 </p>
 
-                <div className={`rounded-2xl border p-2 h-[328px] overflow-y-auto ${darkMode ? 'border-slate-700 bg-slate-900/30' : 'border-black/10 bg-gray-50/50'}`}>
+                <div className="rounded-[22px] border border-[#9CFCC1] bg-[#f3fff8] p-2 max-h-[370px] overflow-y-auto shadow-[inset_0_1px_0_rgba(255,255,255,0.88)]">
                   {isLoadingInbox ? (
-                    <p className={`py-10 text-center text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                    <p className="py-10 text-center text-sm text-[#3f6f59]">
                       Loading contact messages...
                     </p>
                   ) : filteredInboxMessages.length === 0 ? (
-                    <p className={`py-10 text-center text-sm italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>
+                    <p className="py-10 text-center text-sm italic text-[#5d7d6d]">
                       No contact messages found.
                     </p>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {filteredInboxMessages.map((messageItem) => {
+                        const senderName = getInboxSenderName(messageItem) || 'N/A';
+                        const messagePreview = asCleanText(messageItem.message) || 'No message';
                         const isUnread = !readInboxIds.includes(messageItem.id);
                         const isSelected = selectedInboxMessageId === messageItem.id;
                         return (
@@ -7440,23 +7485,30 @@ const Admin: React.FC = () => {
                             onClick={() => handleSelectInboxMessage(messageItem.id)}
                             whileTap={{ scale: 0.97 }}
                             transition={{ duration: 0.14, ease: 'easeOut' }}
-                            className={`w-full rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                              isSelected
-                                ? (darkMode ? 'border-emerald-400/60 bg-emerald-500/15' : 'border-emerald-300 bg-emerald-50')
-                                : isUnread
-                                  ? (darkMode ? 'border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/15' : 'border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/70')
-                                  : (darkMode ? 'border-slate-700 bg-slate-900/40 hover:bg-slate-700/50' : 'border-black/10 bg-white hover:bg-gray-50')
-                            } h-14`}
+                            className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors min-h-[82px] shadow-[0_10px_20px_-16px_rgba(15,23,42,0.45)] ${
+                              isUnread
+                                ? 'bg-[#FFC370] border-[#efb35a] hover:bg-[#ffcf89]'
+                                : 'bg-[#F9F7F7] border-[#9CFCC1] hover:bg-[#ffffff]'
+                            } ${isSelected ? 'ring-2 ring-[#34d399]' : ''}`}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <p className={`text-sm font-semibold truncate ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
-                                {getInboxSenderName(messageItem) || 'N/A'}
-                              </p>
+                              <div className="min-w-0">
+                                <p className={`text-sm truncate ${isUnread ? 'font-bold text-[#1e293b]' : 'font-normal text-[#4b5563]'}`}>
+                                  {senderName}
+                                </p>
+                                <p className={`text-xs mt-0.5 truncate ${isUnread ? 'font-semibold text-[#6a3f00]' : 'font-normal text-[#6b7280]'}`}>
+                                  {messagePreview}
+                                </p>
+                              </div>
                               {isUnread ? (
-                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${darkMode ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#ffe3b7] text-[#6a3f00]">
                                   Unread
                                 </span>
-                              ) : null}
+                              ) : (
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white text-[#6b7280] border border-[#d1d5db]">
+                                  Read
+                                </span>
+                              )}
                             </div>
                           </motion.button>
                         );
@@ -7466,10 +7518,10 @@ const Admin: React.FC = () => {
                 </div>
               </aside>
 
-              <section className={`rounded-[28px] border p-5 md:p-6 shadow-sm min-h-[420px] ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+              <section className="rounded-[28px] border border-[#9CFCC1] bg-[#046241] p-5 md:p-6 shadow-[0_24px_55px_-25px_rgba(4,98,65,0.95)] min-h-[420px]">
                 {!selectedInboxMessage ? (
                   <div className="h-full min-h-[320px] flex items-center justify-center">
-                    <p className={`text-sm italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>
+                    <p className="text-sm italic text-emerald-100/80">
                       Select a name from the left to view full details.
                     </p>
                   </div>
@@ -7484,53 +7536,53 @@ const Admin: React.FC = () => {
                       className="space-y-4"
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                        <h3 className="text-xl font-bold text-[#d7ffe8]">
                           Message Details
                         </h3>
-                        <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                        <p className="text-xs text-emerald-100/80">
                           {formatDateTimeLabel(selectedInboxMessage.created_at)}
                         </p>
                       </div>
 
                       <label className="block">
-                        <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-[#d7ffe8]">
                           Full Name
                         </span>
                         <input
                           type="text"
                           readOnly
                           value={getInboxSenderName(selectedInboxMessage) || 'N/A'}
-                          className={`mt-2 w-full rounded-2xl border px-4 py-3 text-sm shadow-sm ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100 shadow-black/20' : 'bg-white border-emerald-100 text-gray-900 shadow-emerald-100/60'}`}
+                          className="mt-2 w-full rounded-2xl border border-[#9CFCC1] bg-[#f6fff9] px-4 py-3 text-sm text-[#063a28] shadow-[0_12px_22px_-12px_rgba(2,54,35,0.85),inset_0_1px_0_rgba(255,255,255,0.75)]"
                         />
                       </label>
 
                       <label className="block">
-                        <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-[#d7ffe8]">
                           Email
                         </span>
                         <input
                           type="text"
                           readOnly
                           value={selectedInboxMessage.email || 'N/A'}
-                          className={`mt-2 w-full rounded-2xl border px-4 py-3 text-sm shadow-sm ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100 shadow-black/20' : 'bg-white border-emerald-100 text-gray-900 shadow-emerald-100/60'}`}
+                          className="mt-2 w-full rounded-2xl border border-[#9CFCC1] bg-[#f6fff9] px-4 py-3 text-sm text-[#063a28] shadow-[0_12px_22px_-12px_rgba(2,54,35,0.85),inset_0_1px_0_rgba(255,255,255,0.75)]"
                         />
                       </label>
 
                       <label className="block">
-                        <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-[#d7ffe8]">
                           Message
                         </span>
                         <textarea
                           readOnly
                           value={selectedInboxMessage.message || 'N/A'}
                           rows={9}
-                          className={`mt-2 w-full rounded-2xl border px-4 py-3 text-sm whitespace-pre-wrap resize-none shadow-sm ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100 shadow-black/20' : 'bg-white border-emerald-100 text-gray-900 shadow-emerald-100/60'}`}
+                          className="mt-2 w-full rounded-2xl border border-[#9CFCC1] bg-[#f6fff9] px-4 py-3 text-sm text-[#063a28] whitespace-pre-wrap resize-none shadow-[0_12px_22px_-12px_rgba(2,54,35,0.85),inset_0_1px_0_rgba(255,255,255,0.75)]"
                         />
                       </label>
 
                       <div className="pt-2">
                         <div className="flex items-center justify-between gap-3">
-                          <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-[#d7ffe8]">
                             Reply
                           </p>
                           <button
@@ -7559,7 +7611,7 @@ const Admin: React.FC = () => {
                       </div>
 
                       <div className="pt-1">
-                        <p className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>
+                        <p className="text-[10px] font-bold uppercase tracking-widest mb-2 text-[#d7ffe8]">
                           Sent Replies
                         </p>
                         {selectedInboxReplies.length === 0 ? (
@@ -7972,7 +8024,7 @@ const Admin: React.FC = () => {
                                             : 'border border-red-200 text-red-600 hover:bg-red-50'
                                         }`}
                                       >
-                                        {historyDeleteActionKey === `account:${row.id}` ? 'Deleting...' : 'Delete'}
+                                        {historyDeleteActionKey === `account:${row.id}` ? 'Removing...' : 'Delete'}
                                       </button>
                                     </td>
                                   </tr>
@@ -8034,7 +8086,7 @@ const Admin: React.FC = () => {
                                           : 'border border-red-200 text-red-600 hover:bg-red-50'
                                       }`}
                                     >
-                                      {historyDeleteActionKey === `project:${row.id}` ? 'Deleting...' : 'Delete'}
+                                      {historyDeleteActionKey === `project:${row.id}` ? 'Removing...' : 'Delete'}
                                     </button>
                                   </td>
                                 </tr>
@@ -8075,7 +8127,7 @@ const Admin: React.FC = () => {
                               disabled={isHistoryDeleteProcessing}
                               className="px-4 py-2 rounded-lg text-sm font-semibold bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-60"
                             >
-                              {isHistoryDeleteProcessing ? 'Deleting...' : 'Delete Permanently'}
+                              {isHistoryDeleteProcessing ? 'Removing...' : 'Remove from UI'}
                             </button>
                           </div>
                         </div>
