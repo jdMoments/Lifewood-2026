@@ -532,6 +532,7 @@ drop function if exists public.copy_contact_to_inbox_messages();
 drop table if exists public.contact_message cascade;
 drop table if exists public.contact_messages cascade;
 
+
 -- ==========================================
 -- 6. PROFILE SELF-HEAL RPC
 -- ==========================================

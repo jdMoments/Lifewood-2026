@@ -34,6 +34,7 @@ const CareersPage: React.FC = () => {
   const [ageValidationMessage, setAgeValidationMessage] = useState('');
   const [phoneValidationMessage, setPhoneValidationMessage] = useState('');
   const emailFieldRef = useRef<HTMLDivElement | null>(null);
+  const emailInputRef = useRef<HTMLInputElement | null>(null);
   const phoneFieldRef = useRef<HTMLDivElement | null>(null);
 
   const checkExistingApplicationEmail = async (candidateEmail: string) => {
@@ -93,6 +94,14 @@ const CareersPage: React.FC = () => {
 
   const scrollToField = (targetRef: React.RefObject<HTMLDivElement>) => {
     targetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  const focusEmailField = () => {
+    scrollToField(emailFieldRef);
+    window.setTimeout(() => {
+      emailInputRef.current?.focus();
+      emailInputRef.current?.select();
+    }, 220);
   };
 
   React.useEffect(() => {
@@ -165,14 +174,14 @@ const CareersPage: React.FC = () => {
 
       if (isCheckingEmailExists) {
         setStatus({ type: 'error', message: 'Checking email. Please wait.' });
-        scrollToField(emailFieldRef);
+        focusEmailField();
         setLoading(false);
         return;
       }
 
       if (isEmailExists) {
         setStatus({ type: 'error', message: 'Email Already Exist' });
-        scrollToField(emailFieldRef);
+        focusEmailField();
         setLoading(false);
         return;
       }
@@ -202,14 +211,14 @@ const CareersPage: React.FC = () => {
       } catch (error: any) {
         console.error('Error validating email before submit:', error);
         setStatus({ type: 'error', message: 'Unable to validate email right now. Please try again.' });
-        scrollToField(emailFieldRef);
+        focusEmailField();
         setLoading(false);
         return;
       }
       if (emailExists) {
         setStatus({ type: 'error', message: 'Email Already Exist' });
         setIsEmailExists(true);
-        scrollToField(emailFieldRef);
+        focusEmailField();
         setLoading(false);
         return;
       }
@@ -250,7 +259,7 @@ const CareersPage: React.FC = () => {
       if (isDuplicateApplicationEmailError(err)) {
         setStatus({ type: 'error', message: 'Email Already Exist' });
         setIsEmailExists(true);
-        scrollToField(emailFieldRef);
+        focusEmailField();
       } else {
         setStatus({ type: 'error', message: err.message || 'Failed to submit application.' });
       }
@@ -464,10 +473,12 @@ const CareersPage: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-[#002D21]">Age</label>
-                  {ageValidationMessage ? (
-                    <p className="text-xs font-semibold text-red-600">{ageValidationMessage}</p>
-                  ) : null}
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-sm font-semibold text-[#002D21]">Age</label>
+                    {ageValidationMessage ? (
+                      <p className="text-xs font-semibold text-red-600 text-right">{ageValidationMessage}</p>
+                    ) : null}
+                  </div>
                   <input
                     type="number"
                     name="age"
@@ -480,13 +491,16 @@ const CareersPage: React.FC = () => {
                   />
                 </div>
                 <div className="space-y-2" ref={emailFieldRef}>
-                  <label className="text-sm font-semibold text-[#002D21]">Email Address *</label>
-                  {isEmailExists ? (
-                    <p className="text-xs font-semibold text-red-600">Email Already Exist</p>
-                  ) : null}
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-sm font-semibold text-[#002D21]">Email Address *</label>
+                    {isEmailExists ? (
+                      <p className="text-xs font-semibold text-red-600 text-right">Email Already Exist</p>
+                    ) : null}
+                  </div>
                   <input
                     type="email"
                     name="email"
+                    ref={emailInputRef}
                     value={formData.email}
                     onChange={handleChange}
                     required
@@ -496,10 +510,12 @@ const CareersPage: React.FC = () => {
               </div>
 
               <div className="space-y-2" ref={phoneFieldRef}>
-                <label className="text-sm font-semibold text-[#002D21]">Phone Number *</label>
-                {phoneValidationMessage ? (
-                  <p className="text-xs font-semibold text-red-600">{phoneValidationMessage}</p>
-                ) : null}
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-sm font-semibold text-[#002D21]">Phone Number *</label>
+                  {phoneValidationMessage ? (
+                    <p className="text-xs font-semibold text-red-600 text-right">{phoneValidationMessage}</p>
+                  ) : null}
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-[220px_1fr] gap-3">
                   <select
                     name="phoneCountryCode"
