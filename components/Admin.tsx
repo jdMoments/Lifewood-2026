@@ -281,6 +281,7 @@ type HistoryDeleteTarget =
 type DashboardTaskScope = 'all' | 'weekly' | 'monthly';
 
 type ManageFrameKey = 'interns' | 'pending' | 'employees' | 'admins';
+type ManageUsersCategoryFilter = 'all' | ManageFrameKey;
 
 const MANAGE_FRAME_ORDER: ManageFrameKey[] = ['interns', 'pending', 'employees', 'admins'];
 const ADMIN_POSITION_OPTIONS = ['Manager', 'Hr', 'CEO', 'Senior Developer'];
@@ -314,12 +315,14 @@ const Admin: React.FC = () => {
   const [pendingSearchTerm, setPendingSearchTerm] = useState('');
   const [adminSearchTerm, setAdminSearchTerm] = useState('');
   const [expandedManageFrames, setExpandedManageFrames] = useState<ManageFrameKey[]>([]);
+  const [manageUsersCategoryFilter, setManageUsersCategoryFilter] = useState<ManageUsersCategoryFilter>('all');
+  const [isManageUsersCategoryMenuOpen, setIsManageUsersCategoryMenuOpen] = useState(false);
   const [roleFilter, setRoleFilter] = useState('All');
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const [applications, setApplications] = useState<AdminApplicationItem[]>([]);
   const [selectedApplicant, setSelectedApplicant] = useState<AdminApplicationItem | null>(null);
   const [pendingApplicantNameSearch, setPendingApplicantNameSearch] = useState('');
-  const [processedApplicantStatusFilter, setProcessedApplicantStatusFilter] = useState<'all' | 'accepted' | 'declined'>('all');
+  const [processedApplicantStatusFilter, setProcessedApplicantStatusFilter] = useState<'all' | 'accepted' | 'declined' | 'hired'>('all');
   const [processedApplicantNameSearch, setProcessedApplicantNameSearch] = useState('');
   const [selectedProcessedApplicantId, setSelectedProcessedApplicantId] = useState('');
   const [processedApplicantAiAnalysis, setProcessedApplicantAiAnalysis] = useState<ProcessedApplicantAiAnalysis | null>(null);
@@ -435,6 +438,7 @@ const Admin: React.FC = () => {
   const [isSigningOutAll, setIsSigningOutAll] = useState(false);
   const [historyDeleteActionKey, setHistoryDeleteActionKey] = useState<string | null>(null);
   const [historyDeleteTarget, setHistoryDeleteTarget] = useState<HistoryDeleteTarget | null>(null);
+  const manageUsersCategoryMenuRef = useRef<HTMLDivElement | null>(null);
   const roleDropdownRef = useRef<HTMLDivElement | null>(null);
   const applicantActionMenuRef = useRef<HTMLDivElement | null>(null);
   const processedApplicantStatusMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1279,6 +1283,14 @@ const Admin: React.FC = () => {
       minute: '2-digit',
     });
   };
+
+  const escapeHtml = (value: string) =>
+    value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
 
   const getFileExtensionFromUrl = (url?: string | null) => {
     if (!url) return '';
@@ -2780,7 +2792,18 @@ const Admin: React.FC = () => {
   }, [evaluationHistoryFocusId]);
 
   useEffect(() => {
+    if (manageUsersCategoryFilter === 'all') {
+      setExpandedManageFrames([]);
+      return;
+    }
+    setExpandedManageFrames([manageUsersCategoryFilter]);
+  }, [manageUsersCategoryFilter]);
+
+  useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
+      if (manageUsersCategoryMenuRef.current && !manageUsersCategoryMenuRef.current.contains(event.target as Node)) {
+        setIsManageUsersCategoryMenuOpen(false);
+      }
       if (roleDropdownRef.current && !roleDropdownRef.current.contains(event.target as Node)) {
         setIsRoleDropdownOpen(false);
       }
@@ -3361,6 +3384,97 @@ const Admin: React.FC = () => {
     });
   };
 
+  const sendApplicationHiredEmail = async (application: any) => {
+    const applicantName = `${application?.first_name || ''} ${application?.last_name || ''}`.trim() || 'Applicant';
+    const applicantEmail = (application?.email || '').toString().trim();
+    if (!applicantEmail) {
+      throw new Error('Applicant email is empty');
+    }
+
+    const titleValue =
+      (application?.project_applied || application?.position || getApplicantPositionValue(application) || 'Lifewood Position')
+        .toString()
+        .trim() || 'Lifewood Position';
+
+    const safeName = escapeHtml(applicantName);
+    const safeTitle = escapeHtml(titleValue);
+    const emailHtml = `<div style="font-family: system-ui, sans-serif, Arial; font-size: 16px; color: #333;">
+  
+  <a href="https://lifewood-2026-jholmer.netlify.app/" target="_blank" style="text-decoration: none;">
+    <img src="https://framerusercontent.com/images/BZSiFYgRc4wDUAuEybhJbZsIBQY.png?width=1519&height=429" 
+         alt="Lifewood Logo" 
+         style="height: 40px; margin-bottom: 10px;" />
+  </a>
+
+  <p style="padding-top: 16px; border-top: 1px solid #eaeaea;">
+    Dear ${safeName},
+  </p>
+
+  <p>
+    We are pleased to inform you that you have successfully passed the interview for the position of "<strong>${safeTitle}</strong>" at Lifewood.  
+    Your qualifications and experience align well with the requirements for the role, and we are excited to welcome you to the team.
+  </p>
+
+  <p>
+    We are excited to inform you that you can start on Monday.  
+    Should you have any questions or require additional information, do not hesitate to reach out.
+  </p>
+
+  <p>
+    We look forward to working with you and achieving great things together.
+  </p>
+
+  <div style="margin: 24px 0;">
+    <a href="https://lifewood-2026-jholmer.netlify.app/" target="_blank"
+       style="background-color: #1f7a3a; color: #fff; padding: 12px 20px; 
+              text-decoration: none; border-radius: 6px; font-weight: 600;">
+      Visit Lifewood Website
+    </a>
+  </div>
+
+  <p>
+    Should you have any inquiries, please feel free to contact us. We are happy to assist you.
+  </p>
+
+  <p style="padding-top: 16px; border-top: 1px solid #eaeaea;">
+    Best regards,<br/>
+    The Lifewood Team
+  </p>
+
+  <p style="font-size: 13px; color: #666; margin-top: 20px;">
+    Address: Ground Floor i2 Building, Jose Del Mar Street Cebu IT Park, Asia Town, Salinas Drive Apas Lahug, Cebu City, 6000
+  </p>
+
+</div>`;
+
+    const hireTemplateId =
+      (import.meta.env.VITE_EMAILJS_HIRE_TEMPLATE_ID as string | undefined)?.trim() || EMAILJS_ACCEPT_TEMPLATE_ID;
+
+    await sendEmailJsTemplate(hireTemplateId, {
+      name: applicantName,
+      title: titleValue,
+      to_name: applicantName,
+      to_email: applicantEmail,
+      email: applicantEmail,
+      user_email: applicantEmail,
+      recipient: applicantEmail,
+      reply_to: applicantEmail,
+      applicant_name: applicantName,
+      applicant_email: applicantEmail,
+      project_applied: titleValue,
+      application_status: 'Hired',
+      accepted: 'yes',
+      accepted_flag: 'yes',
+      rejected: '',
+      rejected_flag: '',
+      decision_date: new Date().toLocaleDateString(),
+      decision_message: `Congratulations ${applicantName}, you are hired at Lifewood.`,
+      message_html: emailHtml,
+      html_content: emailHtml,
+      email_body_html: emailHtml,
+    });
+  };
+
   const sendProjectDecisionEmail = async (
     submission: ProjectSubmissionItem,
     decision: 'accepted' | 'declined'
@@ -3650,10 +3764,22 @@ const Admin: React.FC = () => {
           setApplications((prev) =>
             prev.map((app) => (app.id === application.id ? { ...app, status: 'hired' } : app))
           );
-          setSelectedApplicant(null);
+          setSelectedApplicant((prev) =>
+            prev && prev.id === application.id ? { ...prev, status: 'hired' } : prev
+          );
           setOpenApplicantActionMenuId(null);
           showApplicantSuccessPopup('Applicant Hired', `${application?.first_name || ''} ${application?.last_name || ''}`.trim() || 'Applicant');
-          setApplicantActionNotice('');
+          try {
+            await sendApplicationHiredEmail({ ...application, status: 'hired' });
+            setApplicantActionNotice('Applicant marked as hired. Hired email sent to applicant account.');
+          } catch (emailError) {
+            console.error('Hire email send error:', emailError);
+            const errorMessage =
+              emailError instanceof Error && emailError.message
+                ? emailError.message.replace(/\s+/g, ' ').slice(0, 180)
+                : 'Unknown EmailJS error';
+            setApplicantActionNotice(`Applicant marked as hired, but hire email was not sent. (${errorMessage})`);
+          }
           return;
         }
         throw error;
@@ -3662,10 +3788,22 @@ const Admin: React.FC = () => {
       setApplications((prev) =>
         prev.map((app) => (app.id === application.id ? { ...app, status: 'hired' } : app))
       );
-      setSelectedApplicant(null);
+      setSelectedApplicant((prev) =>
+        prev && prev.id === application.id ? { ...prev, status: 'hired' } : prev
+      );
       setOpenApplicantActionMenuId(null);
       showApplicantSuccessPopup('Applicant Hired', `${application?.first_name || ''} ${application?.last_name || ''}`.trim() || 'Applicant');
-      setApplicantActionNotice('Applicant marked as hired.');
+      try {
+        await sendApplicationHiredEmail({ ...application, status: 'hired' });
+        setApplicantActionNotice('Applicant marked as hired. Hired email sent to applicant account.');
+      } catch (emailError) {
+        console.error('Hire email send error:', emailError);
+        const errorMessage =
+          emailError instanceof Error && emailError.message
+            ? emailError.message.replace(/\s+/g, ' ').slice(0, 180)
+            : 'Unknown EmailJS error';
+        setApplicantActionNotice(`Applicant marked as hired, but hire email was not sent. (${errorMessage})`);
+      }
     } catch (error) {
       console.error('Error marking applicant as hired:', error);
       setApplicantActionNotice('Unable to mark applicant as hired right now.');
@@ -3928,7 +4066,13 @@ const Admin: React.FC = () => {
   const filteredProcessedApplicants = reviewedApplications
     .filter((app) => {
       const normalizedStatus = normalizeApplicationStatus(app.status);
-      if (processedApplicantStatusFilter !== 'all' && normalizedStatus !== processedApplicantStatusFilter) {
+      if (
+        processedApplicantStatusFilter !== 'all' &&
+        !(
+          normalizedStatus === processedApplicantStatusFilter ||
+          (processedApplicantStatusFilter === 'accepted' && normalizedStatus === 'hired')
+        )
+      ) {
         return false;
       }
       const query = processedApplicantNameSearch.trim().toLowerCase();
@@ -3952,12 +4096,15 @@ const Admin: React.FC = () => {
   const processedApplicantStatusLabel =
     processedApplicantStatusFilter === 'accepted'
       ? 'Accepted'
+      : processedApplicantStatusFilter === 'hired'
+        ? 'Hired'
       : processedApplicantStatusFilter === 'declined'
         ? 'Decline'
         : 'All';
-  const processedApplicantStatusOptions: Array<{ value: 'all' | 'accepted' | 'declined'; label: string }> = [
+  const processedApplicantStatusOptions: Array<{ value: 'all' | 'accepted' | 'declined' | 'hired'; label: string }> = [
     { value: 'all', label: 'All' },
     { value: 'accepted', label: 'Accepted' },
+    { value: 'hired', label: 'Hired' },
     { value: 'declined', label: 'Decline' },
   ];
   const evaluationInsight = selectedEvaluationUser ? getAiInsight(selectedEvaluationUser) : null;
@@ -3977,6 +4124,21 @@ const Admin: React.FC = () => {
   const filteredManageEmployeeProfiles = manageEmployeeProfiles.filter((p) => matchesFirstNameSearch(p, employeeSearchTerm));
   const filteredManagePendingProfiles = pendingProfiles.filter((p) => matchesFirstNameSearch(p, pendingSearchTerm));
   const filteredManageAdminProfiles = manageAdminProfiles.filter((p) => matchesFirstNameSearch(p, adminSearchTerm));
+  const manageUsersCategoryOptions: Array<{ label: string; value: ManageUsersCategoryFilter }> = [
+    { label: 'All', value: 'all' },
+    { label: 'Intern', value: 'interns' },
+    { label: 'Pending Approval', value: 'pending' },
+    { label: 'Employees', value: 'employees' },
+    { label: 'Admins', value: 'admins' },
+  ];
+  const shouldShowManageFrame = (frame: ManageFrameKey) =>
+    manageUsersCategoryFilter === 'all' || manageUsersCategoryFilter === frame;
+  const manageUsersCountByCategory = {
+    interns: filteredManageInternProfiles.length,
+    pending: filteredManagePendingProfiles.length,
+    employees: filteredManageEmployeeProfiles.length,
+    admins: filteredManageAdminProfiles.length,
+  };
   const settingsPanels: Array<{ key: SettingsView; label: string; helper: string }> = [
     { key: 'general', label: 'General', helper: 'Account and language' },
     { key: 'history', label: 'History', helper: 'Archived and deleted records' },
@@ -4697,7 +4859,7 @@ const Admin: React.FC = () => {
       )}
       {/* Sidebar */}
       <aside
-        className={`${isSidebarCollapsed ? 'w-72 lg:w-24' : 'w-72 lg:w-64'} border-r flex flex-col p-6 pb-24 lg:pb-6 fixed h-[100dvh] z-20 transition-all duration-300 overflow-y-auto backdrop-blur-xl transform ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} ${darkMode ? 'bg-white/10 border-white/20 shadow-[0_0_30px_rgba(15,23,42,0.35)]' : 'bg-white/45 border-white/60 shadow-[0_0_30px_rgba(16,185,129,0.15)]'}`}
+        className={`${isSidebarCollapsed ? 'w-72 lg:w-24' : 'w-72 lg:w-64'} border-r flex flex-col p-6 pb-24 lg:pb-6 fixed h-[100dvh] z-20 transition-all duration-300 overflow-y-auto backdrop-blur-xl transform ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} ${darkMode ? 'bg-white/25 border-white/30 shadow-[0_0_30px_rgba(15,23,42,0.35)]' : 'bg-white/55 border-white/70 shadow-[0_0_30px_rgba(16,185,129,0.15)]'}`}
         style={{ scrollbarWidth: 'thin' }}
       >
         <div className={`mb-12 ${isSidebarCollapsed ? 'space-y-3' : ''}`}>
@@ -6639,7 +6801,8 @@ const Admin: React.FC = () => {
             </AnimatePresence>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className={`group rounded-[32px] p-8 border transition-all duration-200 shadow-[0_10px_22px_-18px_rgba(16,185,129,0.45)] ${darkMode ? 'bg-slate-800/75 border-slate-700 hover:border-orange-500/40' : 'bg-white/75 border-emerald-200/70 hover:border-orange-500/25'}`}>
+              <div className={`group relative overflow-hidden rounded-[32px] p-8 border transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.01] shadow-[0_10px_22px_-18px_rgba(16,185,129,0.45)] ${darkMode ? 'bg-slate-800/75 border-slate-700 hover:border-orange-500/40' : 'bg-white/75 border-emerald-200/70 hover:border-orange-500/25'}`}>
+                <span className="pointer-events-none absolute -left-1/3 top-0 h-full w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-white/45 to-transparent opacity-0 transition-all duration-500 group-hover:left-[115%] group-hover:opacity-70" />
                 <div className="flex items-center justify-between mb-4">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-orange-500/10 text-orange-300' : 'bg-orange-50 text-orange-600'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2v6"/><path d="M14 2v6"/><path d="M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M9 16h6"/></svg>
@@ -6647,10 +6810,11 @@ const Admin: React.FC = () => {
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-orange-300 bg-orange-500/20' : 'text-orange-600 bg-orange-50'}`}>Awaiting</span>
                 </div>
                 <p className={`text-[10px] font-extrabold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Pending Applicants</p>
-                <h3 className={`text-3xl font-bold transition-transform duration-200 ease-out group-hover:scale-110 group-hover:font-extrabold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{pendingApplications.length}</h3>
+                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{pendingApplications.length}</h3>
               </div>
 
-              <div className={`group rounded-[32px] p-8 border transition-all duration-200 shadow-[0_10px_22px_-18px_rgba(16,185,129,0.45)] ${darkMode ? 'bg-slate-800/75 border-slate-700 hover:border-red-500/40' : 'bg-white/75 border-emerald-200/70 hover:border-red-500/25'}`}>
+              <div className={`group relative overflow-hidden rounded-[32px] p-8 border transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.01] shadow-[0_10px_22px_-18px_rgba(16,185,129,0.45)] ${darkMode ? 'bg-slate-800/75 border-slate-700 hover:border-red-500/40' : 'bg-white/75 border-emerald-200/70 hover:border-red-500/25'}`}>
+                <span className="pointer-events-none absolute -left-1/3 top-0 h-full w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-white/45 to-transparent opacity-0 transition-all duration-500 group-hover:left-[115%] group-hover:opacity-70" />
                 <div className="flex items-center justify-between mb-4">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-red-500/10 text-red-300' : 'bg-red-50 text-red-600'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
@@ -6658,10 +6822,11 @@ const Admin: React.FC = () => {
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-red-300 bg-red-500/20' : 'text-red-600 bg-red-50'}`}>Decline</span>
                 </div>
                 <p className={`text-[10px] font-extrabold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Decline Applicants</p>
-                <h3 className={`text-3xl font-bold transition-transform duration-200 ease-out group-hover:scale-110 group-hover:font-extrabold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{declinedApplications.length}</h3>
+                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{declinedApplications.length}</h3>
               </div>
 
-              <div className={`group rounded-[32px] p-8 border transition-all duration-200 shadow-[0_10px_22px_-18px_rgba(16,185,129,0.45)] ${darkMode ? 'bg-slate-800/75 border-slate-700 hover:border-emerald-500/40' : 'bg-white/75 border-emerald-200/70 hover:border-emerald-500/30'}`}>
+              <div className={`group relative overflow-hidden rounded-[32px] p-8 border transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.01] shadow-[0_10px_22px_-18px_rgba(16,185,129,0.45)] ${darkMode ? 'bg-slate-800/75 border-slate-700 hover:border-emerald-500/40' : 'bg-white/75 border-emerald-200/70 hover:border-emerald-500/30'}`}>
+                <span className="pointer-events-none absolute -left-1/3 top-0 h-full w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-white/45 to-transparent opacity-0 transition-all duration-500 group-hover:left-[115%] group-hover:opacity-70" />
                 <div className="flex items-center justify-between mb-4">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-emerald-500/10 text-emerald-300' : 'bg-emerald-50 text-emerald-600'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
@@ -6669,10 +6834,11 @@ const Admin: React.FC = () => {
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-emerald-300 bg-emerald-500/20' : 'text-emerald-600 bg-emerald-50'}`}>Accepted</span>
                 </div>
                 <p className={`text-[10px] font-extrabold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Accepted Applicants</p>
-                <h3 className={`text-3xl font-bold transition-transform duration-200 ease-out group-hover:scale-110 group-hover:font-extrabold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{acceptedApplications.length}</h3>
+                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{acceptedApplications.length}</h3>
               </div>
 
-              <div className={`group rounded-[32px] p-8 border transition-all duration-200 shadow-[0_10px_22px_-18px_rgba(16,185,129,0.45)] ${darkMode ? 'bg-slate-800/75 border-slate-700 hover:border-sky-500/40' : 'bg-white/75 border-emerald-200/70 hover:border-sky-500/25'}`}>
+              <div className={`group relative overflow-hidden rounded-[32px] p-8 border transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.01] shadow-[0_10px_22px_-18px_rgba(16,185,129,0.45)] ${darkMode ? 'bg-slate-800/75 border-slate-700 hover:border-sky-500/40' : 'bg-white/75 border-emerald-200/70 hover:border-sky-500/25'}`}>
+                <span className="pointer-events-none absolute -left-1/3 top-0 h-full w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-white/45 to-transparent opacity-0 transition-all duration-500 group-hover:left-[115%] group-hover:opacity-70" />
                 <div className="flex items-center justify-between mb-4">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-sky-500/10 text-sky-300' : 'bg-sky-50 text-sky-600'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h16"/><path d="M8 16V8"/><path d="M12 16V4"/><path d="M16 16v-6"/></svg>
@@ -6680,7 +6846,7 @@ const Admin: React.FC = () => {
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-sky-300 bg-sky-500/20' : 'text-sky-600 bg-sky-50'}`}>Hired</span>
                 </div>
                 <p className={`text-[10px] font-extrabold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Hired Applicants</p>
-                <h3 className={`text-3xl font-bold transition-transform duration-200 ease-out group-hover:scale-110 group-hover:font-extrabold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{hiredApplications.length}</h3>
+                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{hiredApplications.length}</h3>
               </div>
             </div>
 
@@ -6739,7 +6905,7 @@ const Admin: React.FC = () => {
                         <td className={`py-4 font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{app.first_name} {app.last_name}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.email}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.phone || 'N/A'}</td>
-                        <td className={`py-4 text-sm font-bold ${getApplicantPositionLabel(app) === 'Intern (Applicant to PH only)' ? 'text-[#046241]' : 'text-lw-green'}`}>{getApplicantPositionLabel(app)}</td>
+                        <td className={`py-4 text-sm font-bold ${darkMode ? 'text-emerald-300' : 'text-[#046241]'}`}>{getApplicantPositionLabel(app)}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>{new Date(app.created_at).toLocaleDateString()}</td>
                         <td className="py-4">
                           <motion.button
@@ -6780,22 +6946,22 @@ const Admin: React.FC = () => {
                       title="Filter processed applicants by status"
                     >
                       <span className="block w-full text-center">{processedApplicantStatusLabel}</span>
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className={`absolute right-3 top-1/2 -translate-y-1/2 shrink-0 transition-transform ${
-                          isProcessedApplicantStatusMenuOpen ? 'rotate-180' : ''
-                        }`}
-                      >
-                        <polyline points="6 9 12 15 18 9"></polyline>
-                      </svg>
+                      <span className="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className={`shrink-0 transition-transform ${isProcessedApplicantStatusMenuOpen ? 'rotate-180' : ''}`}
+                        >
+                          <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                      </span>
                     </button>
                     <AnimatePresence>
                       {isProcessedApplicantStatusMenuOpen ? (
@@ -6884,34 +7050,40 @@ const Admin: React.FC = () => {
                       >
                         <td className={`py-4 font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{app.first_name} {app.last_name}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.email}</td>
-                        <td className="py-4 text-sm font-bold text-lw-green">{getApplicantPositionLabel(app)}</td>
+                        <td className={`py-4 text-sm font-bold ${darkMode ? 'text-emerald-300' : 'text-[#046241]'}`}>{getApplicantPositionLabel(app)}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>{new Date(app.updated_at || app.created_at).toLocaleDateString()}</td>
                         <td className="py-4">
                           <div className="flex flex-wrap items-center gap-2">
-                            {normalizeApplicationStatus(app.status) === 'accepted' ? null : (
-                              <span
-                                className={`inline-flex text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-none ${
-                                  normalizeApplicationStatus(app.status) === 'declined'
-                                    ? darkMode
-                                      ? 'bg-red-500/10 text-red-300'
-                                      : 'bg-red-50 text-red-600'
-                                    : normalizeApplicationStatus(app.status) === 'hired'
+                            {(() => {
+                              const currentStatus = normalizeApplicationStatus(app.status);
+                              const isAcceptedStatus = currentStatus === 'accepted';
+                              const isHiredStatus = currentStatus === 'hired';
+
+                              return (
+                                <span
+                                  className={`inline-flex text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-none ${
+                                    isHiredStatus
                                       ? darkMode
                                         ? 'bg-blue-500/20 text-blue-200'
                                         : 'bg-blue-100 text-blue-700'
-                                      : darkMode
-                                        ? 'bg-slate-700 text-slate-300'
-                                        : 'bg-gray-100 text-gray-600'
-                                }`}
-                              >
-                                {normalizeApplicationStatus(app.status)}
-                              </span>
-                            )}
+                                      : isAcceptedStatus
+                                        ? darkMode
+                                          ? 'bg-emerald-500/15 text-emerald-300'
+                                          : 'bg-emerald-50 text-emerald-700'
+                                        : darkMode
+                                          ? 'bg-orange-500/20 text-orange-300'
+                                          : 'bg-orange-50 text-orange-600'
+                                  }`}
+                                >
+                                  {isHiredStatus ? 'Hired' : isAcceptedStatus ? 'Accepted' : 'Decline'}
+                                </span>
+                              );
+                            })()}
                           </div>
                         </td>
                         <td className="py-4 pl-2">
                           <div className="relative inline-flex items-center gap-2" ref={openApplicantActionMenuId === app.id ? applicantActionMenuRef : null}>
-                            {normalizeApplicationStatus(app.status) === 'accepted' ? (
+                            {(normalizeApplicationStatus(app.status) === 'accepted' || normalizeApplicationStatus(app.status) === 'hired') ? (
                               <button
                                 type="button"
                                 onClick={(event) => {
@@ -6941,7 +7113,7 @@ const Admin: React.FC = () => {
                               </svg>
                             </button>
                             {openApplicantActionMenuId === app.id && (
-                              <div className={`absolute right-full mr-2 top-1/2 -translate-y-1/2 w-32 rounded-xl border shadow-xl z-20 p-1 ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}>
+                              <div className={`absolute left-full ml-2 top-1/2 -translate-y-1/2 w-32 rounded-xl border shadow-xl z-20 p-1 ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}>
                                 <button
                                   type="button"
                                   onClick={(event) => {
@@ -8442,28 +8614,84 @@ const Admin: React.FC = () => {
           </div>
         ) : activeTab === 'Manage Users' ? (
           <div className="space-y-8">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6">
-              <div>
-                <div className="inline-block bg-white rounded-2xl border border-black/5 px-5 py-3 shadow-sm">
-                <h2 className="text-3xl font-bold text-[#123f2f]">Manage Users</h2>
+            <div className="space-y-3 mb-6">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className={`inline-flex h-11 items-center rounded-xl border px-5 shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+                  <h2 className={`text-2xl font-bold leading-none ${darkMode ? 'text-slate-100' : 'text-[#123f2f]'}`}>Manage Users</h2>
                 </div>
-                {manageUsersNotice ? (
-                  <p className={`text-xs font-semibold mt-1 ${manageUsersNotice.toLowerCase().includes('unable') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-600')}`}>
-                    {manageUsersNotice}
-                  </p>
-                ) : null}
+                <div className="relative min-w-[220px]" ref={manageUsersCategoryMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsManageUsersCategoryMenuOpen((prev) => !prev)}
+                    className={`relative w-full h-11 rounded-xl border px-3 pr-9 text-sm font-bold text-left transition-colors ${
+                      darkMode
+                        ? 'bg-slate-800 border-slate-600 text-slate-100 hover:border-emerald-400/70'
+                        : 'bg-white border-emerald-200 text-gray-900 hover:border-emerald-300'
+                    }`}
+                  >
+                    {manageUsersCategoryOptions.find((option) => option.value === manageUsersCategoryFilter)?.label || 'All'}
+                    <span className="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </span>
+                  </button>
+                  {isManageUsersCategoryMenuOpen ? (
+                    <div className={`absolute top-[calc(100%+6px)] left-0 z-30 w-full rounded-xl border shadow-lg overflow-hidden ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-emerald-200'}`}>
+                      {manageUsersCategoryOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => {
+                            setManageUsersCategoryFilter(option.value);
+                            setIsManageUsersCategoryMenuOpen(false);
+                          }}
+                          className={`w-full px-3 py-2 text-left text-sm transition-colors ${
+                            manageUsersCategoryFilter === option.value
+                              ? darkMode
+                                ? 'bg-emerald-500/20 text-emerald-200'
+                                : 'bg-emerald-50 text-emerald-700'
+                              : darkMode
+                                ? 'text-slate-200 hover:bg-slate-800'
+                                : 'text-gray-700 hover:bg-emerald-50'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div className={`h-11 rounded-xl border px-4 inline-flex items-center text-xs font-bold tracking-wide ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-black/5 text-gray-700'}`}>
+                  Interns: {manageUsersCountByCategory.interns}
+                </div>
+                <div className={`h-11 rounded-xl border px-4 inline-flex items-center text-xs font-bold tracking-wide ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-black/5 text-gray-700'}`}>
+                  Pending Approval: {manageUsersCountByCategory.pending}
+                </div>
+                <div className={`h-11 rounded-xl border px-4 inline-flex items-center text-xs font-bold tracking-wide ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-black/5 text-gray-700'}`}>
+                  Employees: {manageUsersCountByCategory.employees}
+                </div>
+                <div className={`h-11 rounded-xl border px-4 inline-flex items-center text-xs font-bold tracking-wide ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-black/5 text-gray-700'}`}>
+                  Admins: {manageUsersCountByCategory.admins}
+                </div>
+                <button
+                  onClick={refreshUsersData}
+                  title="Refresh users"
+                  className={`h-11 w-11 rounded-xl shadow-sm border inline-flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700' : 'bg-white border-black/5 hover:bg-gray-50'}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                </button>
               </div>
-              <button 
-                onClick={refreshUsersData}
-                className={`p-2 rounded-full shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700' : 'bg-white border-black/5 hover:bg-gray-50'}`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-              </button>
+              {manageUsersNotice ? (
+                <p className={`text-xs font-semibold ${manageUsersNotice.toLowerCase().includes('unable') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-600')}`}>
+                  {manageUsersNotice}
+                </p>
+              ) : null}
             </div>
 
-            <div className={`grid grid-cols-1 lg:grid-cols-2 items-start ${expandedManageFrames.length === 0 ? 'gap-10' : 'gap-8'}`}>
+            <div className={`grid grid-cols-1 ${manageUsersCategoryFilter === 'all' ? 'lg:grid-cols-2' : 'lg:grid-cols-1'} items-start ${expandedManageFrames.length === 0 ? 'gap-10' : 'gap-8'}`}>
               {/* Interns Table */}
-              <div className={`rounded-[40px] ${getManageFramePaddingClass('interns')} shadow-sm border transition-colors ${getManageFrameLayoutClass('interns')} ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+              <div className={`${shouldShowManageFrame('interns') ? 'block' : 'hidden'} rounded-[40px] ${getManageFramePaddingClass('interns')} shadow-sm border transition-all duration-300 ${getManageFrameLayoutClass('interns')} ${manageUsersCategoryFilter === 'interns' ? 'lg:scale-[1.02] lg:origin-top' : ''} ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
                 <ClickSpark
                   sparkColor={darkMode ? '#ffffff' : '#059669'}
                   sparkSize={12}
@@ -8570,7 +8798,7 @@ const Admin: React.FC = () => {
               </div>
 
               {/* Pending Approvals Table */}
-              <div className={`rounded-[40px] ${getManageFramePaddingClass('pending')} shadow-sm border transition-colors ${getManageFrameLayoutClass('pending')} ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+              <div className={`${shouldShowManageFrame('pending') ? 'block' : 'hidden'} rounded-[40px] ${getManageFramePaddingClass('pending')} shadow-sm border transition-all duration-300 ${getManageFrameLayoutClass('pending')} ${manageUsersCategoryFilter === 'pending' ? 'lg:scale-[1.02] lg:origin-top' : ''} ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
                 <div className="flex items-center justify-between mb-4 gap-3">
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${darkMode ? 'bg-orange-500/10 text-orange-400' : 'bg-orange-100 text-orange-600'}`}>
@@ -8667,7 +8895,7 @@ const Admin: React.FC = () => {
               </div>
 
               {/* Employees Table */}
-              <div className={`rounded-[40px] ${getManageFramePaddingClass('employees')} shadow-sm border transition-colors ${getManageFrameLayoutClass('employees')} ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+              <div className={`${shouldShowManageFrame('employees') ? 'block' : 'hidden'} rounded-[40px] ${getManageFramePaddingClass('employees')} shadow-sm border transition-all duration-300 ${getManageFrameLayoutClass('employees')} ${manageUsersCategoryFilter === 'employees' ? 'lg:scale-[1.02] lg:origin-top' : ''} ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
                 <ClickSpark
                   sparkColor={darkMode ? '#ffffff' : '#059669'}
                   sparkSize={12}
@@ -8774,7 +9002,7 @@ const Admin: React.FC = () => {
               </div>
 
               {/* Admins Table */}
-              <div className={`rounded-[40px] ${getManageFramePaddingClass('admins')} shadow-sm border transition-colors ${getManageFrameLayoutClass('admins')} ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+              <div className={`${shouldShowManageFrame('admins') ? 'block' : 'hidden'} rounded-[40px] ${getManageFramePaddingClass('admins')} shadow-sm border transition-all duration-300 ${getManageFrameLayoutClass('admins')} ${manageUsersCategoryFilter === 'admins' ? 'lg:scale-[1.02] lg:origin-top' : ''} ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
                 <div className="flex items-center justify-between mb-4 gap-3">
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${darkMode ? 'bg-sky-500/10 text-sky-300' : 'bg-sky-100 text-sky-700'}`}>

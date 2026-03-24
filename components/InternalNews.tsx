@@ -49,6 +49,39 @@ const GLOBAL_NEWS_ITEMS: GlobalNewsItem[] = [
   },
 ];
 
+const LOCAL_NEWS_ITEMS: GlobalNewsItem[] = [
+  {
+    id: 'ai-agents-capable-reliability-lagging',
+    title: 'AI agents are getting more capable, but reliability is lagging-and that\u2019s a problem',
+    description:
+      "Like many of you, I've started playing around with AI agents. I often use them for research, where they work pretty well and save me substantial amounts of time. But so-called \"deep research\" agents have been available for over a year now, which makes them a relatively mature product in the AI world. I've also started trying the new crop of computer-using agents for other tasks. And here, my experience so far is that these agents are highly inconsistent.",
+    link: 'https://fortune.com/2026/03/24/ai-agents-are-getting-more-capable-but-reliability-is-lagging-narayanan-kapoor/',
+    imageUrl:
+      'https://fortune.com/img-assets/wp-content/uploads/2026/03/GettyImages-1815307952-e1774374184248.jpg?format=webp&w=768&q=100',
+    publishedAt: 'March 24, 2026',
+  },
+  {
+    id: 'coca-cola-ai-marketing',
+    title: 'Coca-Cola turns to AI marketing as price-led growth slows',
+    description:
+      'Recent coverage of the company\u2019s leadership discussions shows that Coca-Cola is entering what executives describe as a new phase focused on influence not pricing power. According to Mi-3, the company is changing its focus from "price to persuasion," with digital platforms, AI, and in-store execution becoming increasingly important in building demand. This reflects a change in consumer brand behaviour as inflation pressures ease and companies seek new strategies to maintain revenue growth.',
+    link: 'https://www.artificialintelligence-news.com/news/coca-cola-turns-to-ai-marketing-as-price-led-growth-slows/',
+    imageUrl:
+      'https://www.artificialintelligence-news.com/wp-content/uploads/2026/02/Coca-Cola-turns-to-AI-marketing-as-price-led-growth-slows-1024x683.jpg',
+    publishedAt: 'February 20, 2026',
+  },
+  {
+    id: 'securing-ai-systems-conditions',
+    title: "Securing AI systems under today's and tomorrow's conditions",
+    description:
+      "Evidence cited in an eBook titled \"AI Quantum Resilience\", published by Utimaco [email wall], shows organisations consider security risks as the leading barrier to effective adoption of AI on data they hold. AI's value depends on data amassed by an organisation. However, there are security risks to building models and training them on that data. These risks are in addition to better-publicised threats to intellectual property that exist around the point of inference (prompt engineering, for example).",
+    link: 'https://www.artificialintelligence-news.com/news/quantum-resilient-ai-needs-migration-and-hardware-protected-data-enclaves/',
+    imageUrl:
+      'https://www.artificialintelligence-news.com/wp-content/uploads/2026/03/quantum-resistant-ai-hero_x1440.webp',
+    publishedAt: 'March 24, 2026',
+  },
+];
+
 const LOCAL_NEWS_BACKGROUND =
   'https://images.unsplash.com/photo-1771757737915-713727193271?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8TE9DQUwlMjBORVdTfGVufDB8fDB8fHww';
 
@@ -113,53 +146,21 @@ const InternalNews: React.FC<InternalNewsProps> = ({ initialView = 'internal' })
         {newsView === 'internal' ? (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-              <div className="group cursor-pointer">
-                <div className="aspect-video overflow-hidden rounded-2xl mb-6">
-                  <img
-                    src="https://picsum.photos/seed/news1/800/600"
-                    alt="News 1"
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
-                <div className="text-lw-green font-bold text-xs uppercase tracking-wider mb-3">February 20, 2026</div>
-                <h3 className="text-2xl font-bold mb-4 text-lw-text-dark group-hover:text-lw-green transition-colors">
-                  {t('internalNewsPage.news1.title')}
-                </h3>
-                <p className="text-lw-text-body text-sm leading-relaxed">{t('internalNewsPage.news1.desc')}</p>
-              </div>
-
-              <div className="group cursor-pointer">
-                <div className="aspect-video overflow-hidden rounded-2xl mb-6">
-                  <img
-                    src="https://picsum.photos/seed/news2/800/600"
-                    alt="News 2"
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
-                <div className="text-lw-green font-bold text-xs uppercase tracking-wider mb-3">February 15, 2026</div>
-                <h3 className="text-2xl font-bold mb-4 text-lw-text-dark group-hover:text-lw-green transition-colors">
-                  {t('internalNewsPage.news2.title')}
-                </h3>
-                <p className="text-lw-text-body text-sm leading-relaxed">{t('internalNewsPage.news2.desc')}</p>
-              </div>
-
-              <div className="group cursor-pointer">
-                <div className="aspect-video overflow-hidden rounded-2xl mb-6">
-                  <img
-                    src="https://picsum.photos/seed/news3/800/600"
-                    alt="News 3"
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
-                <div className="text-lw-green font-bold text-xs uppercase tracking-wider mb-3">February 10, 2026</div>
-                <h3 className="text-2xl font-bold mb-4 text-lw-text-dark group-hover:text-lw-green transition-colors">
-                  {t('internalNewsPage.news3.title')}
-                </h3>
-                <p className="text-lw-text-body text-sm leading-relaxed">{t('internalNewsPage.news3.desc')}</p>
-              </div>
+              {LOCAL_NEWS_ITEMS.map((item) => (
+                <a key={item.id} href={item.link} target="_blank" rel="noreferrer" className="group block cursor-pointer no-underline">
+                  <div className="aspect-video overflow-hidden rounded-2xl mb-6 bg-gray-100">
+                    <img
+                      src={item.imageUrl}
+                      alt={item.title}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                  <div className="text-lw-green font-bold text-xs uppercase tracking-wider mb-3">{item.publishedAt}</div>
+                  <h3 className="text-2xl font-bold mb-4 text-lw-text-dark group-hover:text-lw-green transition-colors">{item.title}</h3>
+                  <p className="text-lw-text-body text-sm leading-relaxed">{item.description}</p>
+                </a>
+              ))}
             </div>
 
             <div className="mt-24 flex justify-center">
