@@ -32,8 +32,32 @@ const ADMIN_EMAIL = 'damayojholmer@gmail.com';
 
 const App: React.FC = () => {
   const { user, profile, isApproved, isAdmin, loading: authLoading } = useAuth();
-  // Get the current hash, defaulting to '/' for routing purposes
-  const getCurrentRoute = () => window.location.hash.substring(1) || '/';
+  const normalizeRoutePath = (routePath: string) => {
+    const trimmedRoute = (routePath || '').trim();
+    if (!trimmedRoute) return '/';
+
+    const [withoutQuery] = trimmedRoute.split('?');
+    const normalizedRoute = withoutQuery.replace(/\/+$/, '') || '/';
+
+    if (normalizedRoute === 'innovation') {
+      return 'innovation';
+    }
+
+    return normalizedRoute.startsWith('/') ? normalizedRoute : `/${normalizedRoute}`;
+  };
+
+  // Prefer hash-based routes, but support direct path access like /careers.
+  const getCurrentRoute = () => {
+    const hashRoute = window.location.hash.substring(1);
+    if (hashRoute) {
+      if (!hashRoute.startsWith('/')) {
+        return hashRoute;
+      }
+      return normalizeRoutePath(hashRoute);
+    }
+
+    return normalizeRoutePath(window.location.pathname || '/');
+  };
   const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
   const [route, setRoute] = useState(getCurrentRoute());
   const [showCookieSettings, setShowCookieSettings] = useState(false);
@@ -41,7 +65,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => {
       const currentHash = window.location.hash;
-      const routePath = currentHash.substring(1) || '/';
+      const routePath = getCurrentRoute();
       
       setRoute(routePath);
 

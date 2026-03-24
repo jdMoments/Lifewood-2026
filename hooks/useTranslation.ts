@@ -22,11 +22,17 @@ export const useTranslation = () => {
         throw new Error('useTranslation must be used within a LanguageProvider');
     }
 
+    const asTranslatableString = (value: any): string | undefined => {
+      if (typeof value === 'string') return value;
+      if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+      return undefined;
+    };
+
     const t = (key: string): string => {
-        const translatedText = get(context.translations, key);
+        const translatedText = asTranslatableString(get(context.translations, key));
         if (translatedText) return translatedText;
 
-        const fallbackText = get(englishContent, key);
+        const fallbackText = asTranslatableString(get(englishContent, key));
         if (fallbackText) return fallbackText;
         
         // Return the key itself if no translation or fallback is found

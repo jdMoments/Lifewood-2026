@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import {
   Clock,
   PerspectiveCamera,
@@ -737,20 +737,35 @@ function createBallpit(canvas: HTMLCanvasElement, params = {}) {
 const Ballpit = ({ className = '', followCursor = true, ...props }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const spheresInstanceRef = useRef<any>(null);
+  const [isRendererAvailable, setIsRendererAvailable] = useState(true);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    spheresInstanceRef.current = createBallpit(canvas, { followCursor, ...props });
+    try {
+      spheresInstanceRef.current = createBallpit(canvas, { followCursor, ...props });
+      setIsRendererAvailable(true);
+    } catch (error) {
+      console.error('Ballpit initialization failed:', error);
+      setIsRendererAvailable(false);
+    }
 
     return () => {
       if (spheresInstanceRef.current) {
-        spheresInstanceRef.current.dispose();
+        try {
+          spheresInstanceRef.current.dispose();
+        } catch (disposeError) {
+          console.error('Ballpit cleanup failed:', disposeError);
+        }
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (!isRendererAvailable) {
+    return null;
+  }
 
   return <canvas className={className} ref={canvasRef} style={{ width: '100%', height: '100%' }} />;
 };
