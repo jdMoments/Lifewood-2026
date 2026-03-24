@@ -8,7 +8,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import ProfileSidebar from './ProfileSidebar';
 import ClickSpark from './ClickSpark';
-import LightPillar from './LightPillar';
+import Aurora from './Aurora';
 
 const ADMIN_EMAILS = ['damayojholmer@gmail.com', 'jholmerdamayo@gmail.com'];
 const EMAILJS_SERVICE_ID = 'service_gtody9o';
@@ -398,12 +398,14 @@ const Admin: React.FC = () => {
   const [isLoadingInbox, setIsLoadingInbox] = useState(false);
   const [inboxNotice, setInboxNotice] = useState('');
   const [inboxSearchTerm, setInboxSearchTerm] = useState('');
+  const [inboxReadFilter, setInboxReadFilter] = useState<'all' | 'read' | 'unread'>('all');
   const [readInboxIds, setReadInboxIds] = useState<string[]>([]);
   const [inboxReplies, setInboxReplies] = useState<Record<string, InboxReplyItem[]>>({});
   const [inboxReplyDraft, setInboxReplyDraft] = useState('');
   const [inboxReplyNotice, setInboxReplyNotice] = useState('');
   const [isInboxReplyComposerOpen, setIsInboxReplyComposerOpen] = useState(false);
   const [selectedInboxReplyView, setSelectedInboxReplyView] = useState<InboxReplyItem | null>(null);
+  const [previewInboxMessageId, setPreviewInboxMessageId] = useState('');
   const [dashboardViewProfile, setDashboardViewProfile] = useState<any>(null);
   const [isProjectDecisionSaving, setIsProjectDecisionSaving] = useState(false);
   const [newAdminName, setNewAdminName] = useState('');
@@ -437,6 +439,9 @@ const Admin: React.FC = () => {
   const applicantActionMenuRef = useRef<HTMLDivElement | null>(null);
   const processedApplicantStatusMenuRef = useRef<HTMLDivElement | null>(null);
   const applicantSuccessPopupTimerRef = useRef<number | null>(null);
+  const inboxLongPressTimerRef = useRef<number | null>(null);
+  const inboxPreviewAutoCloseTimerRef = useRef<number | null>(null);
+  const suppressNextInboxClickRef = useRef(false);
   const resumeAnalysisRequestRef = useRef(0);
   const evaluationHistoryRef = useRef<HTMLDivElement | null>(null);
   const dashboardTaskScopeMenuRef = useRef<HTMLDivElement | null>(null);
@@ -456,6 +461,12 @@ const Admin: React.FC = () => {
     return () => {
       if (applicantSuccessPopupTimerRef.current) {
         window.clearTimeout(applicantSuccessPopupTimerRef.current);
+      }
+      if (inboxLongPressTimerRef.current) {
+        window.clearTimeout(inboxLongPressTimerRef.current);
+      }
+      if (inboxPreviewAutoCloseTimerRef.current) {
+        window.clearTimeout(inboxPreviewAutoCloseTimerRef.current);
       }
     };
   }, []);
@@ -1771,10 +1782,53 @@ const Admin: React.FC = () => {
     setReadInboxIds((previousIds) => (previousIds.includes(messageId) ? previousIds : [...previousIds, messageId]));
   };
 
+  const clearInboxLongPressTimer = () => {
+    if (inboxLongPressTimerRef.current) {
+      window.clearTimeout(inboxLongPressTimerRef.current);
+      inboxLongPressTimerRef.current = null;
+    }
+  };
+
+  const clearInboxPreviewAutoCloseTimer = () => {
+    if (inboxPreviewAutoCloseTimerRef.current) {
+      window.clearTimeout(inboxPreviewAutoCloseTimerRef.current);
+      inboxPreviewAutoCloseTimerRef.current = null;
+    }
+  };
+
+  const handleInboxRowPointerDown = (messageId: string) => {
+    clearInboxLongPressTimer();
+    clearInboxPreviewAutoCloseTimer();
+    suppressNextInboxClickRef.current = false;
+    inboxLongPressTimerRef.current = window.setTimeout(() => {
+      setPreviewInboxMessageId(messageId);
+      suppressNextInboxClickRef.current = true;
+      clearInboxPreviewAutoCloseTimer();
+      inboxPreviewAutoCloseTimerRef.current = window.setTimeout(() => {
+        setPreviewInboxMessageId('');
+      }, 5000);
+    }, 1000);
+  };
+
+  const handleInboxRowPointerEnd = () => {
+    clearInboxLongPressTimer();
+    clearInboxPreviewAutoCloseTimer();
+    setPreviewInboxMessageId('');
+  };
+
   const handleSelectInboxMessage = (messageId: string) => {
     setSelectedInboxMessageId(messageId);
     markInboxMessageAsRead(messageId);
+    setPreviewInboxMessageId('');
     setInboxReplyNotice('');
+  };
+
+  const handleInboxRowClick = (messageId: string) => {
+    if (suppressNextInboxClickRef.current) {
+      suppressNextInboxClickRef.current = false;
+      return;
+    }
+    handleSelectInboxMessage(messageId);
   };
 
   const handleSendInboxReply = () => {
@@ -1924,7 +1978,7 @@ const Admin: React.FC = () => {
         if (previousId && normalizedMessages.some((row) => row.id === previousId)) {
           return previousId;
         }
-        return normalizedMessages[0]?.id || '';
+        return '';
       });
       setInboxNotice('');
     } catch (error) {
@@ -2041,13 +2095,20 @@ const Admin: React.FC = () => {
       if (selectedInboxMessageId) {
         setSelectedInboxMessageId('');
       }
+      if (previewInboxMessageId) {
+        setPreviewInboxMessageId('');
+      }
       return;
     }
 
     if (!contactMessages.some((messageItem) => messageItem.id === selectedInboxMessageId)) {
       setSelectedInboxMessageId('');
     }
-  }, [contactMessages, selectedInboxMessageId]);
+
+    if (previewInboxMessageId && !contactMessages.some((messageItem) => messageItem.id === previewInboxMessageId)) {
+      setPreviewInboxMessageId('');
+    }
+  }, [contactMessages, selectedInboxMessageId, previewInboxMessageId]);
 
   useEffect(() => {
     if (!selectedInboxMessageId) {
@@ -2091,6 +2152,27 @@ const Admin: React.FC = () => {
     }, 12000);
     return () => window.clearTimeout(timer);
   }, [isLoadingInbox]);
+
+  useEffect(() => {
+    if (!previewInboxMessageId) return;
+
+    const handleReleasePreview = () => {
+      clearInboxLongPressTimer();
+      setPreviewInboxMessageId('');
+    };
+
+    window.addEventListener('pointerup', handleReleasePreview);
+    window.addEventListener('mouseup', handleReleasePreview);
+    window.addEventListener('touchend', handleReleasePreview);
+    window.addEventListener('blur', handleReleasePreview);
+
+    return () => {
+      window.removeEventListener('pointerup', handleReleasePreview);
+      window.removeEventListener('mouseup', handleReleasePreview);
+      window.removeEventListener('touchend', handleReleasePreview);
+      window.removeEventListener('blur', handleReleasePreview);
+    };
+  }, [previewInboxMessageId]);
 
   const fetchProjectSubmissions = async () => {
     setIsLoadingProjectSubmissions(true);
@@ -3759,13 +3841,44 @@ const Admin: React.FC = () => {
   const selectedEvaluationAnalytics = selectedEvaluationUser ? getEvaluationAnalytics(selectedEvaluationUser) : null;
   const filteredInboxMessages = contactMessages.filter((messageItem) => {
     const query = inboxSearchTerm.trim().toLowerCase();
+    const isReadMessage = readInboxIds.includes(messageItem.id);
+    if (inboxReadFilter === 'read' && !isReadMessage) return false;
+    if (inboxReadFilter === 'unread' && isReadMessage) return false;
     if (!query) return true;
     const name = getInboxSenderName(messageItem).toLowerCase();
-    return name.includes(query);
+    const firstName = name.split(/\s+/).filter(Boolean)[0] || '';
+    return name.includes(query) || firstName.includes(query);
   });
+  const inboxSearchableNames: string[] = [
+    ...new Set<string>(
+      contactMessages
+        .map((messageItem) => asCleanText(getInboxSenderName(messageItem)))
+        .filter((name) => Boolean(name))
+    ),
+  ].sort((firstName, secondName) => firstName.localeCompare(secondName));
+  const inboxSearchQuery = inboxSearchTerm.trim();
+  const inboxAutocompleteName = inboxSearchQuery
+    ? inboxSearchableNames.find((name) => {
+        const lowerName = name.toLowerCase();
+        const lowerFirstName = (name.split(/\s+/).filter(Boolean)[0] || '').toLowerCase();
+        const lowerQuery = inboxSearchQuery.toLowerCase();
+        return (
+          (lowerFirstName.startsWith(lowerQuery) || lowerName.startsWith(lowerQuery)) &&
+          lowerName !== lowerQuery
+        );
+      }) || ''
+    : '';
+  const inboxAutocompleteSuffix =
+    inboxAutocompleteName && inboxSearchQuery
+      ? inboxAutocompleteName.slice(inboxSearchQuery.length)
+      : '';
   const selectedInboxMessage =
     contactMessages.find((messageItem) => messageItem.id === selectedInboxMessageId) || null;
-  const selectedInboxReplies = selectedInboxMessageId ? (inboxReplies[selectedInboxMessageId] || []) : [];
+  const isSelectedInboxMessageRead = selectedInboxMessage ? readInboxIds.includes(selectedInboxMessage.id) : false;
+  const selectedInboxMessageForDetails = isSelectedInboxMessageRead ? selectedInboxMessage : null;
+  const selectedInboxReplies = selectedInboxMessageForDetails ? (inboxReplies[selectedInboxMessageForDetails.id] || []) : [];
+  const previewInboxMessage =
+    contactMessages.find((messageItem) => messageItem.id === previewInboxMessageId) || null;
   const currentAdminName = asCleanText(
     profile?.full_name ||
     user?.user_metadata?.full_name ||
@@ -4568,23 +4681,12 @@ const Admin: React.FC = () => {
   };
 
   return (
-    <div className={`relative min-h-screen flex font-sans transition-colors duration-300 ${darkMode ? 'bg-[#0f172a] text-slate-200' : 'bg-white text-[#1a1a1a]'}`}>
+    <div className={`relative min-h-screen flex font-sans transition-colors duration-300 ${darkMode ? 'bg-[#0f172a] text-slate-200' : 'bg-[#f5eedb] text-[#1a1a1a]'}`}>
       {!darkMode && (
-        <div className="pointer-events-none absolute inset-0 z-0">
-          <LightPillar
-            topColor="#5227FF"
-            bottomColor="#FF9FFC"
-            intensity={1}
-            rotationSpeed={0.3}
-            glowAmount={0.002}
-            pillarWidth={3}
-            pillarHeight={0.4}
-            noiseIntensity={0.5}
-            pillarRotation={25}
-            interactive={false}
-            mixBlendMode="screen"
-            quality="high"
-          />
+        <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-b from-white via-[#f5eedb] to-[#fffaf0]" />
+          <div className="absolute -top-24 -left-16 h-80 w-80 rounded-full bg-white/45 blur-3xl" />
+          <div className="absolute -bottom-24 right-0 h-96 w-96 rounded-full bg-[#efe1c2] blur-3xl" />
         </div>
       )}
       {isMobileSidebarOpen && (
@@ -4796,6 +4898,17 @@ const Admin: React.FC = () => {
 
       {/* Main Content */}
       <main className={`relative z-10 flex-grow ml-0 ${isSidebarCollapsed ? 'lg:ml-24' : 'lg:ml-64'} p-4 sm:p-6 lg:p-8 pb-24 lg:pb-8 transition-all duration-300`}>
+        <div className={`pointer-events-none absolute inset-0 ${darkMode ? 'opacity-20' : 'opacity-30'}`}>
+          <Aurora
+            amplitude={0.9}
+            blend={0.45}
+            speed={0.8}
+            colorStops={darkMode ? ['#1d4ed8', '#10b981', '#0f172a'] : ['#046241', '#f5eedb', '#7ccf9c']}
+          />
+        </div>
+        {!darkMode && <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/20 via-[#f5eedb]/35 to-[#f5eedb]/20" />}
+
+        <div className="relative z-10">
         <div className="lg:hidden mb-4">
           <button
             type="button"
@@ -4816,7 +4929,7 @@ const Admin: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
               <div className={`rounded-[32px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:border-emerald-500/40' : 'bg-white border-black/5 hover:border-emerald-500/20'}`}>
                 <div className="flex items-center justify-between mb-4">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-[#046241]/10 text-[#046241]">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                   </div>
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-emerald-400 bg-emerald-500/20' : 'text-emerald-600 bg-emerald-50'}`}>+12%</span>
@@ -6526,48 +6639,48 @@ const Admin: React.FC = () => {
             </AnimatePresence>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className={`rounded-[32px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:border-orange-500/40' : 'bg-white border-black/5 hover:border-orange-500/20'}`}>
+              <div className={`group rounded-[32px] p-8 border transition-all duration-200 shadow-[0_10px_22px_-18px_rgba(16,185,129,0.45)] ${darkMode ? 'bg-slate-800/75 border-slate-700 hover:border-orange-500/40' : 'bg-white/75 border-emerald-200/70 hover:border-orange-500/25'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-orange-500/10 text-orange-300' : 'bg-orange-50 text-orange-600'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2v6"/><path d="M14 2v6"/><path d="M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M9 16h6"/></svg>
                   </div>
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-orange-300 bg-orange-500/20' : 'text-orange-600 bg-orange-50'}`}>Awaiting</span>
                 </div>
-                <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Pending Applicants</p>
-                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{pendingApplications.length}</h3>
+                <p className={`text-[10px] font-extrabold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Pending Applicants</p>
+                <h3 className={`text-3xl font-bold transition-transform duration-200 ease-out group-hover:scale-110 group-hover:font-extrabold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{pendingApplications.length}</h3>
               </div>
 
-              <div className={`rounded-[32px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:border-red-500/40' : 'bg-white border-black/5 hover:border-red-500/20'}`}>
+              <div className={`group rounded-[32px] p-8 border transition-all duration-200 shadow-[0_10px_22px_-18px_rgba(16,185,129,0.45)] ${darkMode ? 'bg-slate-800/75 border-slate-700 hover:border-red-500/40' : 'bg-white/75 border-emerald-200/70 hover:border-red-500/25'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-red-500/10 text-red-300' : 'bg-red-50 text-red-600'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
                   </div>
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-red-300 bg-red-500/20' : 'text-red-600 bg-red-50'}`}>Decline</span>
                 </div>
-                <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Decline Applicants</p>
-                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{declinedApplications.length}</h3>
+                <p className={`text-[10px] font-extrabold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Decline Applicants</p>
+                <h3 className={`text-3xl font-bold transition-transform duration-200 ease-out group-hover:scale-110 group-hover:font-extrabold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{declinedApplications.length}</h3>
               </div>
 
-              <div className={`rounded-[32px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:border-emerald-500/40' : 'bg-white border-black/5 hover:border-emerald-500/20'}`}>
+              <div className={`group rounded-[32px] p-8 border transition-all duration-200 shadow-[0_10px_22px_-18px_rgba(16,185,129,0.45)] ${darkMode ? 'bg-slate-800/75 border-slate-700 hover:border-emerald-500/40' : 'bg-white/75 border-emerald-200/70 hover:border-emerald-500/30'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-emerald-500/10 text-emerald-300' : 'bg-emerald-50 text-emerald-600'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
                   </div>
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-emerald-300 bg-emerald-500/20' : 'text-emerald-600 bg-emerald-50'}`}>Accepted</span>
                 </div>
-                <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Accepted Applicants</p>
-                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{acceptedApplications.length}</h3>
+                <p className={`text-[10px] font-extrabold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Accepted Applicants</p>
+                <h3 className={`text-3xl font-bold transition-transform duration-200 ease-out group-hover:scale-110 group-hover:font-extrabold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{acceptedApplications.length}</h3>
               </div>
 
-              <div className={`rounded-[32px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 hover:border-sky-500/40' : 'bg-white border-black/5 hover:border-sky-500/20'}`}>
+              <div className={`group rounded-[32px] p-8 border transition-all duration-200 shadow-[0_10px_22px_-18px_rgba(16,185,129,0.45)] ${darkMode ? 'bg-slate-800/75 border-slate-700 hover:border-sky-500/40' : 'bg-white/75 border-emerald-200/70 hover:border-sky-500/25'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-sky-500/10 text-sky-300' : 'bg-sky-50 text-sky-600'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h16"/><path d="M8 16V8"/><path d="M12 16V4"/><path d="M16 16v-6"/></svg>
                   </div>
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${darkMode ? 'text-sky-300 bg-sky-500/20' : 'text-sky-600 bg-sky-50'}`}>Hired</span>
                 </div>
-                <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Hired Applicants</p>
-                <h3 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{hiredApplications.length}</h3>
+                <p className={`text-[10px] font-extrabold uppercase tracking-widest mb-1 ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Hired Applicants</p>
+                <h3 className={`text-3xl font-bold transition-transform duration-200 ease-out group-hover:scale-110 group-hover:font-extrabold ${darkMode ? 'text-slate-100' : 'text-emerald-900'}`}>{hiredApplications.length}</h3>
               </div>
             </div>
 
@@ -6575,18 +6688,23 @@ const Admin: React.FC = () => {
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-8">
                 <div>
                   <h3 className={`text-3xl font-extrabold leading-tight ${darkMode ? 'text-slate-100' : 'text-[#123f2f]'}`}>New Applicants</h3>
-                  <p className={`text-sm font-semibold mt-1 ${darkMode ? 'text-slate-300' : 'text-gray-600'}`}>Pending Applicants</p>
+                  <p className={`text-sm font-semibold mt-4 ${darkMode ? 'text-slate-300' : 'text-gray-600'}`}>Pending Applicants</p>
                 </div>
                 <div className="flex items-center gap-2 lg:ml-auto">
                   <div className={`group flex items-center h-10 rounded-xl border overflow-hidden transition-all ${
                     darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'
                   }`}>
-                    <div className={`w-10 h-10 inline-flex items-center justify-center ${darkMode ? 'text-slate-300' : 'text-gray-500'}`} title="Search pending applicants">
+                    <motion.div
+                      className={`w-10 h-10 inline-flex items-center justify-center ${darkMode ? 'text-slate-300' : 'text-gray-500'}`}
+                      title="Search pending applicants"
+                      whileHover={{ y: [0, -2.5, 0], rotate: [0, 5, -4, 0] }}
+                      transition={{ duration: 1.6, ease: 'easeInOut', repeat: Infinity }}
+                    >
                       <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="11" cy="11" r="8"/>
                         <path d="m21 21-4.3-4.3"/>
                       </svg>
-                    </div>
+                    </motion.div>
                     <input
                       type="text"
                       value={pendingApplicantNameSearch}
@@ -6621,16 +6739,18 @@ const Admin: React.FC = () => {
                         <td className={`py-4 font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{app.first_name} {app.last_name}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.email}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.phone || 'N/A'}</td>
-                        <td className="py-4 text-sm font-bold text-lw-green">{getApplicantPositionLabel(app)}</td>
+                        <td className={`py-4 text-sm font-bold ${getApplicantPositionLabel(app) === 'Intern (Applicant to PH only)' ? 'text-[#046241]' : 'text-lw-green'}`}>{getApplicantPositionLabel(app)}</td>
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>{new Date(app.created_at).toLocaleDateString()}</td>
                         <td className="py-4">
-                          <button
+                          <motion.button
                             onClick={() => setSelectedApplicant(app)}
                             title="Review application and choose Accept or Decline"
-                            className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-none transition-all ${darkMode ? 'bg-orange-500/10 text-orange-300 hover:bg-orange-500/20 hover:scale-105' : 'bg-orange-50 text-orange-600 hover:scale-105'}`}
+                            whileTap={{ scale: 0.92 }}
+                            transition={{ duration: 0.16, ease: 'easeOut' }}
+                            className="inline-flex items-center text-[10px] font-extrabold uppercase tracking-widest px-3 py-1.5 rounded-lg border border-[#efb35a] bg-[#FFC370] text-[#5f3a00] shadow-[0_4px_0_#e8aa50,0_10px_16px_-14px_rgba(126,79,9,0.9)] transition-all hover:brightness-105 active:translate-y-[1px] active:shadow-[0_2px_0_#cc8b32,0_8px_12px_-12px_rgba(126,79,9,0.85)]"
                           >
-                            pending
-                          </button>
+                            Pending
+                          </motion.button>
                         </td>
                       </tr>
                     ))}
@@ -6652,14 +6772,14 @@ const Admin: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setIsProcessedApplicantStatusMenuOpen((prev) => !prev)}
-                      className={`h-10 min-w-[155px] rounded-xl border pl-3 pr-3 text-xs font-bold uppercase tracking-widest text-left inline-flex items-center gap-2 focus:outline-none ${
+                      className={`relative h-11 min-w-[170px] rounded-xl border-2 px-3 pr-8 text-xs font-extrabold uppercase tracking-widest inline-flex items-center justify-center text-center focus:outline-none shadow-[0_5px_0_rgba(6,58,40,0.18),0_11px_18px_-12px_rgba(2,54,35,0.8)] transition-all active:translate-y-[1px] active:shadow-[0_3px_0_rgba(6,58,40,0.2),0_7px_14px_-12px_rgba(2,54,35,0.7)] ${
                         darkMode
-                          ? 'bg-slate-900 border-emerald-500/40 text-emerald-300'
-                          : 'bg-white border-emerald-300 text-emerald-700'
+                          ? 'bg-slate-900 border-emerald-500/60 text-emerald-300'
+                          : 'bg-white border-emerald-400 text-emerald-800'
                       }`}
                       title="Filter processed applicants by status"
                     >
-                      <span>{processedApplicantStatusLabel}</span>
+                      <span className="block w-full text-center">{processedApplicantStatusLabel}</span>
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         width="14"
@@ -6670,7 +6790,7 @@ const Admin: React.FC = () => {
                         strokeWidth="2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        className={`ml-auto shrink-0 transition-transform ${
+                        className={`absolute right-3 top-1/2 -translate-y-1/2 shrink-0 transition-transform ${
                           isProcessedApplicantStatusMenuOpen ? 'rotate-180' : ''
                         }`}
                       >
@@ -6696,7 +6816,7 @@ const Admin: React.FC = () => {
                                 setProcessedApplicantStatusFilter(option.value);
                                 setIsProcessedApplicantStatusMenuOpen(false);
                               }}
-                              className={`w-full text-left px-3 py-2 text-xs font-bold uppercase tracking-widest transition-colors ${
+                              className={`w-full text-center px-3 py-2 text-xs font-extrabold uppercase tracking-widest transition-colors ${
                                 processedApplicantStatusFilter === option.value
                                   ? darkMode
                                     ? 'bg-emerald-500/20 text-emerald-200'
@@ -6750,7 +6870,7 @@ const Admin: React.FC = () => {
                       <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Project Applied For</th>
                       <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Date</th>
                       <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Status</th>
-                      <th className={`py-4 pl-2 w-[72px] text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Action</th>
+                      <th className={`py-4 pl-2 w-[180px] text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -6768,13 +6888,10 @@ const Admin: React.FC = () => {
                         <td className={`py-4 text-sm ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>{new Date(app.updated_at || app.created_at).toLocaleDateString()}</td>
                         <td className="py-4">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`inline-flex text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-none ${
-                                normalizeApplicationStatus(app.status) === 'accepted'
-                                  ? darkMode
-                                    ? 'bg-emerald-500/10 text-emerald-300'
-                                    : 'bg-emerald-50 text-emerald-600'
-                                  : normalizeApplicationStatus(app.status) === 'declined'
+                            {normalizeApplicationStatus(app.status) === 'accepted' ? null : (
+                              <span
+                                className={`inline-flex text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-none ${
+                                  normalizeApplicationStatus(app.status) === 'declined'
                                     ? darkMode
                                       ? 'bg-red-500/10 text-red-300'
                                       : 'bg-red-50 text-red-600'
@@ -6785,10 +6902,15 @@ const Admin: React.FC = () => {
                                       : darkMode
                                         ? 'bg-slate-700 text-slate-300'
                                         : 'bg-gray-100 text-gray-600'
-                              }`}
-                            >
-                              {normalizeApplicationStatus(app.status)}
-                            </span>
+                                }`}
+                              >
+                                {normalizeApplicationStatus(app.status)}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-4 pl-2">
+                          <div className="relative inline-flex items-center gap-2" ref={openApplicantActionMenuId === app.id ? applicantActionMenuRef : null}>
                             {normalizeApplicationStatus(app.status) === 'accepted' ? (
                               <button
                                 type="button"
@@ -6796,20 +6918,12 @@ const Admin: React.FC = () => {
                                   event.stopPropagation();
                                   setSelectedApplicant(app);
                                 }}
-                                className={`inline-flex text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-none transition-colors ${
-                                  darkMode
-                                    ? 'bg-orange-500/10 text-orange-300 hover:bg-orange-500/20'
-                                    : 'bg-orange-50 text-orange-600 hover:bg-orange-100'
-                                }`}
+                                className="inline-flex text-[10px] font-extrabold uppercase tracking-widest px-3 py-1.5 rounded-lg border border-[#046241]/40 bg-white text-[#046241] shadow-[0_4px_0_#cde7dc,0_10px_16px_-12px_rgba(2,54,35,0.9)] transition-all hover:bg-[#046241] hover:text-white hover:shadow-[0_4px_0_#034731,0_10px_16px_-12px_rgba(2,54,35,0.95)] active:translate-y-[1px] active:shadow-[0_2px_0_#034731,0_8px_14px_-12px_rgba(2,54,35,0.85)]"
                                 title="View accepted applicant schedule and resume points"
                               >
                                 View
                               </button>
                             ) : null}
-                          </div>
-                        </td>
-                        <td className="py-4 pl-2">
-                          <div className="relative inline-flex" ref={openApplicantActionMenuId === app.id ? applicantActionMenuRef : null}>
                             <button
                               type="button"
                               onClick={(event) => {
@@ -7409,49 +7523,44 @@ const Admin: React.FC = () => {
           </div>
         ) : activeTab === 'Inbox' ? (
           <div className="space-y-6">
-            <div className={`rounded-[28px] border p-4 md:p-5 shadow-sm ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
+            <div className={`rounded-[28px] border-2 p-4 md:p-5 shadow-[0_8px_0_rgba(0,0,0,0.28),0_24px_32px_-22px_rgba(0,0,0,0.95)] ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/20'}`}>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
-                  <h2 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-[#123f2f]'}`}>Inbox</h2>
-                  <p className={`${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
-                    Contact Us Messages
+                  <h2 className={`text-3xl font-bold ${darkMode ? 'text-slate-100' : 'text-[#123f2f]'}`}>INBOX</h2>
+                  <p className={`mt-6 ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                    Message from the User Concerns
                   </p>
-                  <p className={`text-xs mt-1 font-semibold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
-                    {filteredInboxMessages.length} record{filteredInboxMessages.length === 1 ? '' : 's'}
-                  </p>
-                  {inboxSourceDebug.length > 0 ? (
-                    <p className={`mt-1 text-[11px] ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
-                      {inboxSourceDebug
-                        .map((sourceItem) =>
-                          `${sourceItem.table}: ${sourceItem.rows}${sourceItem.error ? ` (${sourceItem.error})` : ''}`
-                        )
-                        .join(' | ')}
-                    </p>
-                  ) : null}
+                  <span className="sr-only">{inboxSourceDebug.length}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={inboxSearchTerm}
-                    onChange={(e) => setInboxSearchTerm(e.target.value)}
-                    placeholder="Search name..."
-                    className={`h-10 w-72 rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
-                      darkMode ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder:text-slate-500' : 'bg-white border-gray-200 text-gray-900 placeholder:text-gray-400'
-                    }`}
-                  />
+                  <div className="relative w-72">
+                    {inboxAutocompleteSuffix ? (
+                      <div className={`pointer-events-none absolute inset-y-0 left-0 right-0 px-3 flex items-center text-sm ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>
+                        <span className="text-transparent whitespace-pre">{inboxSearchQuery}</span>
+                        <span className="italic whitespace-pre">{inboxAutocompleteSuffix}</span>
+                      </div>
+                    ) : null}
+                    <input
+                      type="text"
+                      value={inboxSearchTerm}
+                      onChange={(e) => setInboxSearchTerm(e.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Tab' && inboxAutocompleteName) {
+                          event.preventDefault();
+                          setInboxSearchTerm(inboxAutocompleteName);
+                        }
+                      }}
+                      placeholder="Search name..."
+                      className={`relative z-10 h-11 w-full rounded-xl border-2 px-3 py-2 text-sm shadow-[0_5px_0_rgba(0,0,0,0.23),0_14px_18px_-14px_rgba(0,0,0,0.95)] focus:outline-none focus:ring-2 focus:ring-emerald-500/20 ${
+                        darkMode ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder:text-slate-500' : 'bg-white border-black/20 text-gray-900 placeholder:text-gray-400'
+                      }`}
+                    />
+                  </div>
                   {inboxNotice ? (
                     <p className={`text-xs font-semibold ${inboxNotice.toLowerCase().includes('unable') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-700')}`}>
                       {inboxNotice}
                     </p>
                   ) : null}
-                  <button
-                    type="button"
-                    onClick={fetchContactMessages}
-                    className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-white border-black/10 text-gray-600 hover:bg-gray-50'}`}
-                    title="Refresh inbox"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-                  </button>
                 </div>
               </div>
             </div>
@@ -7461,6 +7570,35 @@ const Admin: React.FC = () => {
                 <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] mb-3 text-[#d7ffe8]">
                   Inbox Names
                 </p>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <p className="text-[10px] text-[#d7ffe8]/90">
+                    Please Read the Messages
+                  </p>
+                  <div className="inline-flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setInboxReadFilter((previous) => (previous === 'read' ? 'all' : 'read'))}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                        inboxReadFilter === 'read'
+                          ? 'bg-white text-[#046241] border border-white'
+                          : 'bg-transparent text-[#d7ffe8] border border-[#9CFCC1]/70 hover:bg-white/10'
+                      }`}
+                    >
+                      Read
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInboxReadFilter((previous) => (previous === 'unread' ? 'all' : 'unread'))}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                        inboxReadFilter === 'unread'
+                          ? 'bg-[#FFC370] text-[#5f3a00] border border-[#efb35a]'
+                          : 'bg-transparent text-[#d7ffe8] border border-[#9CFCC1]/70 hover:bg-white/10'
+                      }`}
+                    >
+                      Unread
+                    </button>
+                  </div>
+                </div>
 
                 <div className="rounded-[22px] border border-[#9CFCC1] bg-[#f3fff8] p-2 max-h-[370px] overflow-y-auto shadow-[inset_0_1px_0_rgba(255,255,255,0.88)]">
                   {isLoadingInbox ? (
@@ -7478,11 +7616,15 @@ const Admin: React.FC = () => {
                         const messagePreview = asCleanText(messageItem.message) || 'No message';
                         const isUnread = !readInboxIds.includes(messageItem.id);
                         const isSelected = selectedInboxMessageId === messageItem.id;
-                        return (
+                      return (
                           <motion.button
                             key={messageItem.id}
                             type="button"
-                            onClick={() => handleSelectInboxMessage(messageItem.id)}
+                            onClick={() => handleInboxRowClick(messageItem.id)}
+                            onPointerDown={() => handleInboxRowPointerDown(messageItem.id)}
+                            onPointerUp={handleInboxRowPointerEnd}
+                            onPointerLeave={handleInboxRowPointerEnd}
+                            onPointerCancel={handleInboxRowPointerEnd}
                             whileTap={{ scale: 0.97 }}
                             transition={{ duration: 0.14, ease: 'easeOut' }}
                             className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors min-h-[82px] shadow-[0_10px_20px_-16px_rgba(15,23,42,0.45)] ${
@@ -7493,10 +7635,10 @@ const Admin: React.FC = () => {
                           >
                             <div className="flex items-center justify-between gap-2">
                               <div className="min-w-0">
-                                <p className={`text-sm truncate ${isUnread ? 'font-bold text-[#1e293b]' : 'font-normal text-[#4b5563]'}`}>
+                                <p className={`text-sm whitespace-normal break-words ${isUnread ? 'font-bold text-[#1e293b]' : 'font-normal text-[#4b5563]'}`}>
                                   {senderName}
                                 </p>
-                                <p className={`text-xs mt-0.5 truncate ${isUnread ? 'font-semibold text-[#6a3f00]' : 'font-normal text-[#6b7280]'}`}>
+                                <p className={`text-xs mt-0.5 whitespace-normal break-words ${isUnread ? 'font-semibold text-[#6a3f00]' : 'font-normal text-[#6b7280]'}`}>
                                   {messagePreview}
                                 </p>
                               </div>
@@ -7519,16 +7661,16 @@ const Admin: React.FC = () => {
               </aside>
 
               <section className="rounded-[28px] border border-[#9CFCC1] bg-[#046241] p-5 md:p-6 shadow-[0_24px_55px_-25px_rgba(4,98,65,0.95)] min-h-[420px]">
-                {!selectedInboxMessage ? (
+                {!selectedInboxMessageForDetails ? (
                   <div className="h-full min-h-[320px] flex items-center justify-center">
                     <p className="text-sm italic text-emerald-100/80">
-                      Select a name from the left to view full details.
+                      Message Details Empty. Click a message to read.
                     </p>
                   </div>
                 ) : (
                   <AnimatePresence mode="wait">
                     <motion.div
-                      key={selectedInboxMessage.id}
+                      key={selectedInboxMessageForDetails.id}
                       initial={{ opacity: 0, x: 10, scale: 0.965 }}
                       animate={{ opacity: 1, x: 0, scale: 1 }}
                       exit={{ opacity: 0, x: -8, scale: 0.98 }}
@@ -7540,7 +7682,7 @@ const Admin: React.FC = () => {
                           Message Details
                         </h3>
                         <p className="text-xs text-emerald-100/80">
-                          {formatDateTimeLabel(selectedInboxMessage.created_at)}
+                          {formatDateTimeLabel(selectedInboxMessageForDetails.created_at)}
                         </p>
                       </div>
 
@@ -7551,7 +7693,7 @@ const Admin: React.FC = () => {
                         <input
                           type="text"
                           readOnly
-                          value={getInboxSenderName(selectedInboxMessage) || 'N/A'}
+                          value={getInboxSenderName(selectedInboxMessageForDetails) || 'N/A'}
                           className="mt-2 w-full rounded-2xl border border-[#9CFCC1] bg-[#f6fff9] px-4 py-3 text-sm text-[#063a28] shadow-[0_12px_22px_-12px_rgba(2,54,35,0.85),inset_0_1px_0_rgba(255,255,255,0.75)]"
                         />
                       </label>
@@ -7563,7 +7705,7 @@ const Admin: React.FC = () => {
                         <input
                           type="text"
                           readOnly
-                          value={selectedInboxMessage.email || 'N/A'}
+                          value={selectedInboxMessageForDetails.email || 'N/A'}
                           className="mt-2 w-full rounded-2xl border border-[#9CFCC1] bg-[#f6fff9] px-4 py-3 text-sm text-[#063a28] shadow-[0_12px_22px_-12px_rgba(2,54,35,0.85),inset_0_1px_0_rgba(255,255,255,0.75)]"
                         />
                       </label>
@@ -7574,7 +7716,7 @@ const Admin: React.FC = () => {
                         </span>
                         <textarea
                           readOnly
-                          value={selectedInboxMessage.message || 'N/A'}
+                          value={selectedInboxMessageForDetails.message || 'N/A'}
                           rows={9}
                           className="mt-2 w-full rounded-2xl border border-[#9CFCC1] bg-[#f6fff9] px-4 py-3 text-sm text-[#063a28] whitespace-pre-wrap resize-none shadow-[0_12px_22px_-12px_rgba(2,54,35,0.85),inset_0_1px_0_rgba(255,255,255,0.75)]"
                         />
@@ -7652,7 +7794,59 @@ const Admin: React.FC = () => {
             </div>
 
             <AnimatePresence>
-              {isInboxReplyComposerOpen && selectedInboxMessage ? (
+              {previewInboxMessage ? (
+                <motion.div
+                  className="fixed inset-0 z-[125] flex items-center justify-center p-4"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <div className="absolute inset-0 bg-black/35 backdrop-blur-[6px]" />
+                  <motion.div
+                    initial={{ scale: 0.98, opacity: 0.9 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.98, opacity: 0.9 }}
+                    transition={{ duration: 0.16, ease: 'easeOut' }}
+                    className="relative w-full max-w-4xl min-h-[420px] rounded-[28px] border border-[#9CFCC1] bg-white/92 p-5 md:p-6 shadow-[0_30px_70px_-30px_rgba(0,0,0,0.9)]"
+                  >
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <h3 className="text-xl font-bold text-[#046241]">Message Preview</h3>
+                      <p className="text-xs text-[#4b5563] italic">Release to close</p>
+                    </div>
+                    <div className="space-y-3">
+                      <label className="block">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-[#046241]">Full Name</span>
+                        <input
+                          readOnly
+                          value={getInboxSenderName(previewInboxMessage) || 'N/A'}
+                          className="mt-2 w-full rounded-2xl border border-[#9CFCC1] bg-white px-4 py-3 text-sm text-[#063a28] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-[#046241]">Email</span>
+                        <input
+                          readOnly
+                          value={previewInboxMessage.email || 'N/A'}
+                          className="mt-2 w-full rounded-2xl border border-[#9CFCC1] bg-white px-4 py-3 text-sm text-[#063a28] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-[#046241]">Message</span>
+                        <textarea
+                          readOnly
+                          value={previewInboxMessage.message || 'N/A'}
+                          rows={10}
+                          className="mt-2 w-full rounded-2xl border border-[#9CFCC1] bg-white px-4 py-3 text-sm text-[#063a28] whitespace-pre-wrap resize-none shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
+                        />
+                      </label>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {isInboxReplyComposerOpen && selectedInboxMessageForDetails ? (
                 <motion.div
                   className="fixed inset-0 z-[120] flex items-center justify-center p-4"
                   initial={{ opacity: 0 }}
@@ -7676,7 +7870,7 @@ const Admin: React.FC = () => {
                       <div>
                         <h3 className={`text-2xl font-bold ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>Reply Message</h3>
                         <p className={`text-sm mt-1 ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
-                          Send a reply to {getInboxSenderName(selectedInboxMessage) || 'this user'}.
+                          Send a reply to {getInboxSenderName(selectedInboxMessageForDetails) || 'this user'}.
                         </p>
                       </div>
                       <button
@@ -8728,6 +8922,7 @@ const Admin: React.FC = () => {
             </div>
           </div>
         )}
+        </div>
       </main>
 
       <AnimatePresence>
