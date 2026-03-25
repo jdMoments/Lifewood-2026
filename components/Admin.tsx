@@ -1284,6 +1284,15 @@ const Admin: React.FC = () => {
     });
   };
 
+  const getHireChanceSummaryByScore = (score: number, maxScore: number) => {
+    const safeMax = Math.max(1, maxScore);
+    const percent = Math.max(0, Math.min(100, Math.round((score / safeMax) * 100)));
+    if (percent >= 85) return 'Excellent score. The chance of being hired is very high.';
+    if (percent >= 70) return 'Strong score. The chance of being hired is high.';
+    if (percent >= 55) return 'Average score. There is still a moderate chance of being hired.';
+    return 'Low score. The chance of being hired is currently low.';
+  };
+
   const escapeHtml = (value: string) =>
     value
       .replace(/&/g, '&amp;')
@@ -3587,7 +3596,17 @@ const Admin: React.FC = () => {
 
       if (resumeAnalysisRequestRef.current !== requestId) return;
       setResumeAnalysisResult(result);
-      setResumeAnalysisNotice('AI Analyze completed.');
+      const currentStatus = normalizeApplicationStatus(application.status);
+      const isProcessedView = currentStatus === 'accepted' || currentStatus === 'hired';
+      if (isProcessedView) {
+        setApplicantResumePointsById((prev) => ({
+          ...prev,
+          [application.id]: result.totalPoints,
+        }));
+        setResumeAnalysisNotice('');
+      } else {
+        setResumeAnalysisNotice('AI Analyze completed.');
+      }
     } catch (error) {
       console.error('Error analyzing applicant resume:', error);
       if (resumeAnalysisRequestRef.current !== requestId) return;
@@ -4083,9 +4102,17 @@ const Admin: React.FC = () => {
     ? (darkMode
         ? 'rounded-2xl border border-emerald-500/30 bg-slate-900/65 px-4 py-3 shadow-[0_14px_26px_-22px_rgba(16,185,129,0.55),0_8px_14px_-10px_rgba(0,0,0,0.5)]'
         : 'rounded-2xl border border-emerald-200 bg-white px-4 py-3 shadow-[0_14px_26px_-22px_rgba(16,185,129,0.42),0_8px_14px_-10px_rgba(15,23,42,0.35)]')
-    : '';
+    : (darkMode
+        ? 'rounded-2xl border border-slate-700 bg-slate-900/55 px-4 py-3 shadow-[0_10px_20px_-18px_rgba(15,23,42,0.65)]'
+        : 'rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-[0_10px_20px_-18px_rgba(15,23,42,0.25)]');
   const selectedApplicantResumePoints = selectedApplicant ? applicantResumePointsById[selectedApplicant.id] : undefined;
   const isSelectedApplicantProcessed = selectedApplicantStatus === 'accepted' || selectedApplicantStatus === 'hired';
+  const isResumePreviewProcessedApplicant = resumePreviewApplicant
+    ? (() => {
+        const previewStatus = normalizeApplicationStatus(resumePreviewApplicant.status);
+        return previewStatus === 'accepted' || previewStatus === 'hired';
+      })()
+    : false;
   const reviewedApplications = applications.filter((app) => normalizeApplicationStatus(app.status) !== 'pending');
   const filteredProcessedApplicants = reviewedApplications
     .filter((app) => {
@@ -7360,22 +7387,24 @@ const Admin: React.FC = () => {
                               >
                                 View File
                               </button>
-                              <a
-                                href={selectedApplicant.cv_url}
-                                download={getApplicantResumeDownloadName(selectedApplicant)}
-                                className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border transition-colors ${
-                                  darkMode
-                                    ? 'border-slate-600 text-slate-200 hover:bg-slate-700'
-                                    : 'border-gray-200 text-gray-700 hover:bg-gray-100'
-                                }`}
-                                title="Download resume"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                  <polyline points="7 10 12 15 17 10"/>
-                                  <line x1="12" y1="15" x2="12" y2="3"/>
-                                </svg>
-                              </a>
+                              {!isSelectedApplicantProcessed ? (
+                                <a
+                                  href={selectedApplicant.cv_url}
+                                  download={getApplicantResumeDownloadName(selectedApplicant)}
+                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border transition-colors ${
+                                    darkMode
+                                      ? 'border-slate-600 text-slate-200 hover:bg-slate-700'
+                                      : 'border-gray-200 text-gray-700 hover:bg-gray-100'
+                                  }`}
+                                  title="Download resume"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="7 10 12 15 17 10"/>
+                                    <line x1="12" y1="15" x2="12" y2="3"/>
+                                  </svg>
+                                </a>
+                              ) : null}
                             </div>
                           ) : (
                             <span className={`text-xs font-semibold ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>N/A</span>
@@ -7595,7 +7624,7 @@ const Admin: React.FC = () => {
                             </div>
                           )}
                         </div>
-                        {resumePreviewApplicant.cv_url ? (
+                        {resumePreviewApplicant.cv_url && !isResumePreviewProcessedApplicant ? (
                           <div className="mt-3 flex items-center justify-between gap-3">
                             <p className={`text-xs truncate ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                               {getApplicantResumeDownloadName(resumePreviewApplicant)}
@@ -7670,6 +7699,11 @@ const Admin: React.FC = () => {
                                     <p className={`text-xs font-semibold ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>
                                       {score} / {maxScore} ({scorePercent}%)
                                     </p>
+                                    {isResumePreviewProcessedApplicant ? (
+                                      <p className={`text-xs text-center leading-relaxed max-w-xs ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                                        {getHireChanceSummaryByScore(score, maxScore)}
+                                      </p>
+                                    ) : null}
                                   </>
                                 );
                               })()}
@@ -7683,30 +7717,32 @@ const Admin: React.FC = () => {
                           ) : null}
                         </div>
 
-                        <div className="mt-5 flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={handleCloseResumePreviewModal}
-                            className={`px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest border transition-colors ${
-                              darkMode ? 'border-slate-700 text-slate-200 hover:bg-slate-800' : 'border-gray-300 text-gray-700 hover:bg-gray-100'
-                            }`}
-                          >
-                            Exit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleConfirmResumeAnalysis}
-                            disabled={isAnalyzingResume || !resumeAnalysisResult}
-                            className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            Confirm
-                          </button>
-                          {resumeAnalysisNotice ? (
-                            <p className={`text-xs font-semibold ${resumeAnalysisNotice.toLowerCase().includes('failed') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-700')}`}>
-                              {resumeAnalysisNotice}
-                            </p>
-                          ) : null}
-                        </div>
+                        {!isResumePreviewProcessedApplicant ? (
+                          <div className="mt-5 flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={handleCloseResumePreviewModal}
+                              className={`px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest border transition-colors ${
+                                darkMode ? 'border-slate-700 text-slate-200 hover:bg-slate-800' : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                              }`}
+                            >
+                              Exit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleConfirmResumeAnalysis}
+                              disabled={isAnalyzingResume || !resumeAnalysisResult}
+                              className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Confirm
+                            </button>
+                            {resumeAnalysisNotice ? (
+                              <p className={`text-xs font-semibold ${resumeAnalysisNotice.toLowerCase().includes('failed') ? (darkMode ? 'text-orange-300' : 'text-orange-600') : (darkMode ? 'text-emerald-300' : 'text-emerald-700')}`}>
+                                {resumeAnalysisNotice}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </motion.div>
