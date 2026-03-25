@@ -286,9 +286,19 @@ type ManageUsersCategoryFilter = 'all' | ManageFrameKey;
 const MANAGE_FRAME_ORDER: ManageFrameKey[] = ['interns', 'pending', 'employees', 'admins'];
 const ADMIN_POSITION_OPTIONS = ['Manager', 'Hr', 'CEO', 'Senior Developer'];
 const APP_LANGUAGE_OPTIONS = ['English', 'Filipino', 'Japanese', 'Mandarin'];
+const APPLICANT_PROJECT_FILTER_OPTIONS = [
+  'Casual Video Models (Video Data Collection)',
+  'Moderator & Voice Participants (Voice Data Collection)',
+  'Data Annotator (Iphone User)',
+  'Image Data Collector (Capturing Text - Rich Items)',
+  'Data Curation (Genealogy Project)',
+  'Intern (Applicant to PH only)',
+];
 const CONTACT_MESSAGE_TABLE = 'inbox_messages' as const;
 const INBOX_READ_STORAGE_KEY = 'lifewood_admin_inbox_read_v1';
 const INBOX_REPLY_STORAGE_KEY = 'lifewood_admin_inbox_reply_v1';
+const INBOX_ARCHIVED_STORAGE_KEY = 'lifewood_admin_inbox_archived_v1';
+const INBOX_DELETED_STORAGE_KEY = 'lifewood_admin_inbox_deleted_v1';
 const HIRED_STATUS_OVERRIDE_STORAGE_KEY = 'lifewood_admin_hired_status_override_v1';
 const HISTORY_HIDDEN_ACCOUNT_STORAGE_KEY = 'lifewood_admin_hidden_account_history_v1';
 const HISTORY_HIDDEN_PROJECT_STORAGE_KEY = 'lifewood_admin_hidden_project_history_v1';
@@ -322,6 +332,8 @@ const Admin: React.FC = () => {
   const [applications, setApplications] = useState<AdminApplicationItem[]>([]);
   const [selectedApplicant, setSelectedApplicant] = useState<AdminApplicationItem | null>(null);
   const [pendingApplicantNameSearch, setPendingApplicantNameSearch] = useState('');
+  const [pendingApplicantProjectFilter, setPendingApplicantProjectFilter] = useState('all');
+  const [isPendingApplicantProjectMenuOpen, setIsPendingApplicantProjectMenuOpen] = useState(false);
   const [processedApplicantStatusFilter, setProcessedApplicantStatusFilter] = useState<'all' | 'accepted' | 'declined' | 'hired'>('all');
   const [processedApplicantNameSearch, setProcessedApplicantNameSearch] = useState('');
   const [selectedProcessedApplicantId, setSelectedProcessedApplicantId] = useState('');
@@ -401,8 +413,12 @@ const Admin: React.FC = () => {
   const [isLoadingInbox, setIsLoadingInbox] = useState(false);
   const [inboxNotice, setInboxNotice] = useState('');
   const [inboxSearchTerm, setInboxSearchTerm] = useState('');
-  const [inboxReadFilter, setInboxReadFilter] = useState<'all' | 'read' | 'unread'>('all');
+  const [inboxReadFilter, setInboxReadFilter] = useState<'all' | 'read' | 'unread' | 'archived'>('all');
   const [readInboxIds, setReadInboxIds] = useState<string[]>([]);
+  const [archivedInboxIds, setArchivedInboxIds] = useState<string[]>([]);
+  const [deletedInboxIds, setDeletedInboxIds] = useState<string[]>([]);
+  const [openInboxActionMenuId, setOpenInboxActionMenuId] = useState('');
+  const [inboxDeleteTargetId, setInboxDeleteTargetId] = useState('');
   const [inboxReplies, setInboxReplies] = useState<Record<string, InboxReplyItem[]>>({});
   const [inboxReplyDraft, setInboxReplyDraft] = useState('');
   const [inboxReplyNotice, setInboxReplyNotice] = useState('');
@@ -441,6 +457,7 @@ const Admin: React.FC = () => {
   const manageUsersCategoryMenuRef = useRef<HTMLDivElement | null>(null);
   const roleDropdownRef = useRef<HTMLDivElement | null>(null);
   const applicantActionMenuRef = useRef<HTMLDivElement | null>(null);
+  const pendingApplicantProjectMenuRef = useRef<HTMLDivElement | null>(null);
   const processedApplicantStatusMenuRef = useRef<HTMLDivElement | null>(null);
   const applicantSuccessPopupTimerRef = useRef<number | null>(null);
   const inboxLongPressTimerRef = useRef<number | null>(null);
@@ -555,6 +572,30 @@ const Admin: React.FC = () => {
     }
 
     try {
+      const storedArchivedInboxIds = window.localStorage.getItem(INBOX_ARCHIVED_STORAGE_KEY);
+      if (storedArchivedInboxIds) {
+        const parsed = JSON.parse(storedArchivedInboxIds);
+        if (Array.isArray(parsed)) {
+          setArchivedInboxIds(parsed.filter((value) => typeof value === 'string'));
+        }
+      }
+    } catch (error) {
+      console.warn('Unable to restore archived inbox ids:', error);
+    }
+
+    try {
+      const storedDeletedInboxIds = window.localStorage.getItem(INBOX_DELETED_STORAGE_KEY);
+      if (storedDeletedInboxIds) {
+        const parsed = JSON.parse(storedDeletedInboxIds);
+        if (Array.isArray(parsed)) {
+          setDeletedInboxIds(parsed.filter((value) => typeof value === 'string'));
+        }
+      }
+    } catch (error) {
+      console.warn('Unable to restore deleted inbox ids:', error);
+    }
+
+    try {
       const storedHiddenAccountRows = window.localStorage.getItem(HISTORY_HIDDEN_ACCOUNT_STORAGE_KEY);
       if (storedHiddenAccountRows) {
         const parsed = JSON.parse(storedHiddenAccountRows);
@@ -594,6 +635,22 @@ const Admin: React.FC = () => {
       console.warn('Unable to persist inbox replies:', error);
     }
   }, [inboxReplies]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(INBOX_ARCHIVED_STORAGE_KEY, JSON.stringify(archivedInboxIds));
+    } catch (error) {
+      console.warn('Unable to persist archived inbox ids:', error);
+    }
+  }, [archivedInboxIds]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(INBOX_DELETED_STORAGE_KEY, JSON.stringify(deletedInboxIds));
+    } catch (error) {
+      console.warn('Unable to persist deleted inbox ids:', error);
+    }
+  }, [deletedInboxIds]);
 
   useEffect(() => {
     try {
@@ -1849,7 +1906,69 @@ const Admin: React.FC = () => {
       suppressNextInboxClickRef.current = false;
       return;
     }
+    setOpenInboxActionMenuId('');
     handleSelectInboxMessage(messageId);
+  };
+
+  const handleArchiveInboxMessage = (messageId: string) => {
+    if (!messageId) return;
+    setArchivedInboxIds((previousIds) => (previousIds.includes(messageId) ? previousIds : [...previousIds, messageId]));
+    setOpenInboxActionMenuId('');
+    if (selectedInboxMessageId === messageId) {
+      setSelectedInboxMessageId('');
+      setSelectedInboxReplyView(null);
+      setIsInboxReplyComposerOpen(false);
+    }
+    if (previewInboxMessageId === messageId) {
+      setPreviewInboxMessageId('');
+    }
+    setInboxNotice('Message archived.');
+  };
+
+  const handleRestoreInboxMessage = (messageId: string) => {
+    if (!messageId) return;
+    setArchivedInboxIds((previousIds) => previousIds.filter((itemId) => itemId !== messageId));
+    setOpenInboxActionMenuId('');
+    setInboxNotice('Message restored to Inbox.');
+  };
+
+  const openInboxDeleteModal = (messageId: string) => {
+    if (!messageId) return;
+    setOpenInboxActionMenuId('');
+    setInboxDeleteTargetId(messageId);
+  };
+
+  const closeInboxDeleteModal = () => {
+    setInboxDeleteTargetId('');
+  };
+
+  const handleConfirmInboxDelete = () => {
+    if (!inboxDeleteTargetId) return;
+    const targetId = inboxDeleteTargetId;
+
+    setDeletedInboxIds((previousIds) => (previousIds.includes(targetId) ? previousIds : [...previousIds, targetId]));
+    setReadInboxIds((previousIds) => previousIds.filter((itemId) => itemId !== targetId));
+    setArchivedInboxIds((previousIds) => previousIds.filter((itemId) => itemId !== targetId));
+    setContactMessages((previousMessages) => previousMessages.filter((messageItem) => messageItem.id !== targetId));
+    setInboxReplies((previousReplies) => {
+      if (!previousReplies[targetId]) return previousReplies;
+      const nextReplies = { ...previousReplies };
+      delete nextReplies[targetId];
+      return nextReplies;
+    });
+
+    if (selectedInboxMessageId === targetId) {
+      setSelectedInboxMessageId('');
+      setSelectedInboxReplyView(null);
+      setIsInboxReplyComposerOpen(false);
+    }
+    if (previewInboxMessageId === targetId) {
+      setPreviewInboxMessageId('');
+    }
+
+    setInboxDeleteTargetId('');
+    setOpenInboxActionMenuId('');
+    setInboxNotice('Message deleted.');
   };
 
   const handleSendInboxReply = () => {
@@ -2112,7 +2231,8 @@ const Admin: React.FC = () => {
   }, [selectedApplicant, applicantResumePointsById]);
 
   useEffect(() => {
-    if (!contactMessages.length) {
+    const visibleMessages = contactMessages.filter((messageItem) => !deletedInboxIds.includes(messageItem.id));
+    if (!visibleMessages.length) {
       if (selectedInboxMessageId) {
         setSelectedInboxMessageId('');
       }
@@ -2122,14 +2242,14 @@ const Admin: React.FC = () => {
       return;
     }
 
-    if (!contactMessages.some((messageItem) => messageItem.id === selectedInboxMessageId)) {
+    if (!visibleMessages.some((messageItem) => messageItem.id === selectedInboxMessageId)) {
       setSelectedInboxMessageId('');
     }
 
-    if (previewInboxMessageId && !contactMessages.some((messageItem) => messageItem.id === previewInboxMessageId)) {
+    if (previewInboxMessageId && !visibleMessages.some((messageItem) => messageItem.id === previewInboxMessageId)) {
       setPreviewInboxMessageId('');
     }
-  }, [contactMessages, selectedInboxMessageId, previewInboxMessageId]);
+  }, [contactMessages, deletedInboxIds, selectedInboxMessageId, previewInboxMessageId]);
 
   useEffect(() => {
     if (!selectedInboxMessageId) {
@@ -2194,6 +2314,34 @@ const Admin: React.FC = () => {
       window.removeEventListener('blur', handleReleasePreview);
     };
   }, [previewInboxMessageId]);
+
+  useEffect(() => {
+    if (!openInboxActionMenuId) return;
+
+    const handleActionMenuEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setOpenInboxActionMenuId('');
+    };
+
+    window.addEventListener('keydown', handleActionMenuEscape);
+    return () => {
+      window.removeEventListener('keydown', handleActionMenuEscape);
+    };
+  }, [openInboxActionMenuId]);
+
+  useEffect(() => {
+    if (!inboxDeleteTargetId) return;
+
+    const handleDeleteModalEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setInboxDeleteTargetId('');
+    };
+
+    window.addEventListener('keydown', handleDeleteModalEscape);
+    return () => {
+      window.removeEventListener('keydown', handleDeleteModalEscape);
+    };
+  }, [inboxDeleteTargetId]);
 
   useEffect(() => {
     const handleEscapeClose = (event: KeyboardEvent) => {
@@ -2842,6 +2990,9 @@ const Admin: React.FC = () => {
       }
       if (applicantActionMenuRef.current && !applicantActionMenuRef.current.contains(event.target as Node)) {
         setOpenApplicantActionMenuId(null);
+      }
+      if (pendingApplicantProjectMenuRef.current && !pendingApplicantProjectMenuRef.current.contains(event.target as Node)) {
+        setIsPendingApplicantProjectMenuOpen(false);
       }
       if (processedApplicantStatusMenuRef.current && !processedApplicantStatusMenuRef.current.contains(event.target as Node)) {
         setIsProcessedApplicantStatusMenuOpen(false);
@@ -4020,11 +4171,18 @@ const Admin: React.FC = () => {
   const selectedEvaluationUser =
     evaluationCandidates.find((candidate) => candidate.id === selectedEvaluationUserId) || null;
   const selectedEvaluationAnalytics = selectedEvaluationUser ? getEvaluationAnalytics(selectedEvaluationUser) : null;
-  const filteredInboxMessages = contactMessages.filter((messageItem) => {
+  const visibleInboxMessages = contactMessages.filter((messageItem) => !deletedInboxIds.includes(messageItem.id));
+  const filteredInboxMessages = visibleInboxMessages.filter((messageItem) => {
     const query = inboxSearchTerm.trim().toLowerCase();
+    const isArchivedMessage = archivedInboxIds.includes(messageItem.id);
     const isReadMessage = readInboxIds.includes(messageItem.id);
-    if (inboxReadFilter === 'read' && !isReadMessage) return false;
-    if (inboxReadFilter === 'unread' && isReadMessage) return false;
+    if (inboxReadFilter === 'archived') {
+      if (!isArchivedMessage) return false;
+    } else {
+      if (isArchivedMessage) return false;
+      if (inboxReadFilter === 'read' && !isReadMessage) return false;
+      if (inboxReadFilter === 'unread' && isReadMessage) return false;
+    }
     if (!query) return true;
     const name = getInboxSenderName(messageItem).toLowerCase();
     const firstName = name.split(/\s+/).filter(Boolean)[0] || '';
@@ -4032,7 +4190,7 @@ const Admin: React.FC = () => {
   });
   const inboxSearchableNames: string[] = [
     ...new Set<string>(
-      contactMessages
+      visibleInboxMessages
         .map((messageItem) => asCleanText(getInboxSenderName(messageItem)))
         .filter((name) => Boolean(name))
     ),
@@ -4054,12 +4212,19 @@ const Admin: React.FC = () => {
       ? inboxAutocompleteName.slice(inboxSearchQuery.length)
       : '';
   const selectedInboxMessage =
-    contactMessages.find((messageItem) => messageItem.id === selectedInboxMessageId) || null;
+    visibleInboxMessages.find((messageItem) => messageItem.id === selectedInboxMessageId) || null;
   const isSelectedInboxMessageRead = selectedInboxMessage ? readInboxIds.includes(selectedInboxMessage.id) : false;
   const selectedInboxMessageForDetails = isSelectedInboxMessageRead ? selectedInboxMessage : null;
   const selectedInboxReplies = selectedInboxMessageForDetails ? (inboxReplies[selectedInboxMessageForDetails.id] || []) : [];
   const previewInboxMessage =
-    contactMessages.find((messageItem) => messageItem.id === previewInboxMessageId) || null;
+    visibleInboxMessages.find((messageItem) => messageItem.id === previewInboxMessageId) || null;
+  const openInboxActionMessage =
+    visibleInboxMessages.find((messageItem) => messageItem.id === openInboxActionMenuId) || null;
+  const isOpenInboxActionMessageArchived = openInboxActionMessage
+    ? archivedInboxIds.includes(openInboxActionMessage.id)
+    : false;
+  const inboxDeleteTargetMessage =
+    visibleInboxMessages.find((messageItem) => messageItem.id === inboxDeleteTargetId) || null;
   const currentAdminName = asCleanText(
     profile?.full_name ||
     user?.user_metadata?.full_name ||
@@ -4068,17 +4233,22 @@ const Admin: React.FC = () => {
     'Admin'
   );
   const currentAdminEmail = asCleanText(user?.email || profile?.email).toLowerCase();
-  const unreadInboxCount = contactMessages.reduce(
-    (total, messageItem) => (readInboxIds.includes(messageItem.id) ? total : total + 1),
+  const unreadInboxCount = visibleInboxMessages.reduce(
+    (total, messageItem) =>
+      archivedInboxIds.includes(messageItem.id) || readInboxIds.includes(messageItem.id) ? total : total + 1,
     0
   );
   const pendingApplications = applications.filter((app) => normalizeApplicationStatus(app.status) === 'pending');
   const filteredPendingApplications = pendingApplications.filter((app) => {
+    const selectedProjectFilter = asCleanText(pendingApplicantProjectFilter).toLowerCase();
+    const project = asCleanText(getApplicantPositionLabel(app)).toLowerCase();
+    if (selectedProjectFilter && selectedProjectFilter !== 'all' && project !== selectedProjectFilter) {
+      return false;
+    }
     const query = pendingApplicantNameSearch.trim().toLowerCase();
     if (!query) return true;
     const fullName = `${asCleanText(app.first_name)} ${asCleanText(app.last_name)}`.trim().toLowerCase();
     const email = asCleanText(app.email).toLowerCase();
-    const project = asCleanText(getApplicantPositionLabel(app)).toLowerCase();
     return fullName.includes(query) || email.includes(query) || project.includes(query);
   });
   const declinedApplications = applications.filter((app) => normalizeApplicationStatus(app.status) === 'declined');
@@ -4157,6 +4327,15 @@ const Admin: React.FC = () => {
     { value: 'accepted', label: 'Accepted' },
     { value: 'hired', label: 'Hired' },
     { value: 'declined', label: 'Decline' },
+  ];
+  const pendingApplicantProjectFilterLabel =
+    pendingApplicantProjectFilter === 'all' ? 'All Projects' : pendingApplicantProjectFilter;
+  const pendingApplicantProjectOptions = [
+    { value: 'all', label: 'All Projects' },
+    ...APPLICANT_PROJECT_FILTER_OPTIONS.map((projectName) => ({
+      value: projectName,
+      label: projectName,
+    })),
   ];
   const evaluationInsight = selectedEvaluationUser ? getAiInsight(selectedEvaluationUser) : null;
   const approvedInternProfiles = allProfiles.filter((p) => p?.is_approved === true && isInternLikeRole(getNormalizedRole(p)));
@@ -6903,9 +7082,76 @@ const Admin: React.FC = () => {
 
             <div className={`rounded-[40px] p-8 shadow-sm border transition-colors ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-black/5'}`}>
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-8">
-                <div>
-                  <h3 className={`text-3xl font-extrabold leading-tight ${darkMode ? 'text-slate-100' : 'text-[#123f2f]'}`}>New Applicants</h3>
-                  <p className={`text-sm font-semibold mt-4 ${darkMode ? 'text-slate-300' : 'text-gray-600'}`}>Pending Applicants</p>
+                <div className="flex flex-col sm:flex-row sm:items-start sm:gap-6">
+                  <div>
+                    <h3 className={`text-3xl font-extrabold leading-tight ${darkMode ? 'text-slate-100' : 'text-[#123f2f]'}`}>New Applicants</h3>
+                    <p className={`text-sm font-semibold mt-4 ${darkMode ? 'text-slate-300' : 'text-gray-600'}`}>Pending Applicants</p>
+                  </div>
+                  <div className="relative mt-2 sm:mt-0" ref={pendingApplicantProjectMenuRef}>
+                    <button
+                      type="button"
+                      onClick={() => setIsPendingApplicantProjectMenuOpen((previous) => !previous)}
+                      className={`relative h-11 min-w-[300px] rounded-xl border-2 px-3 pr-8 text-xs font-extrabold inline-flex items-center justify-center text-center focus:outline-none shadow-[0_5px_0_rgba(6,58,40,0.18),0_11px_18px_-12px_rgba(2,54,35,0.8)] transition-all active:translate-y-[1px] active:shadow-[0_3px_0_rgba(6,58,40,0.2),0_7px_14px_-12px_rgba(2,54,35,0.7)] ${
+                        darkMode
+                          ? 'bg-slate-900 border-emerald-500/60 text-emerald-300'
+                          : 'bg-white border-emerald-400 text-emerald-800'
+                      }`}
+                      title="Filter pending applicants by project applied"
+                    >
+                      <span className="block w-full text-center truncate">{pendingApplicantProjectFilterLabel}</span>
+                      <span className="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className={`shrink-0 transition-transform ${isPendingApplicantProjectMenuOpen ? 'rotate-180' : ''}`}
+                        >
+                          <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                      </span>
+                    </button>
+                    <AnimatePresence>
+                      {isPendingApplicantProjectMenuOpen ? (
+                        <motion.div
+                          initial={{ opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={{ duration: 0.14 }}
+                          className={`absolute top-[calc(100%+6px)] left-0 z-30 min-w-[300px] max-h-[260px] overflow-y-auto rounded-xl border shadow-lg ${
+                            darkMode ? 'bg-slate-900 border-emerald-500/30' : 'bg-white border-gray-200'
+                          }`}
+                        >
+                          {pendingApplicantProjectOptions.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                setPendingApplicantProjectFilter(option.value);
+                                setIsPendingApplicantProjectMenuOpen(false);
+                              }}
+                              className={`w-full text-left px-3 py-2 text-xs font-bold transition-colors ${
+                                pendingApplicantProjectFilter === option.value
+                                  ? darkMode
+                                    ? 'bg-emerald-500/20 text-emerald-200'
+                                    : 'bg-emerald-50 text-emerald-700'
+                                  : darkMode
+                                    ? 'text-emerald-300 hover:bg-slate-800'
+                                    : 'text-emerald-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 lg:ml-auto">
                   <div className={`group flex items-center h-10 rounded-xl border overflow-hidden transition-all ${
@@ -7794,39 +8040,135 @@ const Admin: React.FC = () => {
               </div>
             </div>
 
+            <AnimatePresence>
+              {openInboxActionMenuId ? (
+                <motion.div
+                  className="fixed inset-0 z-[118] flex items-center justify-center p-4"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <button
+                    type="button"
+                    className="absolute inset-0 bg-black/30 backdrop-blur-[4px]"
+                    onClick={() => setOpenInboxActionMenuId('')}
+                    aria-label="Close inbox actions menu"
+                  />
+                  <motion.div
+                    initial={{ y: 20, opacity: 0, scale: 0.98 }}
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
+                    exit={{ y: 14, opacity: 0, scale: 0.98 }}
+                    transition={{ duration: 0.18, ease: 'easeOut' }}
+                    className={`relative w-full max-w-sm rounded-[24px] border p-5 shadow-2xl ${
+                      darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'
+                    }`}
+                  >
+                    <h3 className={`text-base font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                      Message Actions
+                    </h3>
+                    <p className={`mt-1 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-600'}`}>
+                      {getInboxSenderName(openInboxActionMessage) || 'Selected message'}
+                    </p>
+                    <div className="mt-5 grid grid-cols-1 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!openInboxActionMenuId) return;
+                          if (isOpenInboxActionMessageArchived) {
+                            handleRestoreInboxMessage(openInboxActionMenuId);
+                            return;
+                          }
+                          handleArchiveInboxMessage(openInboxActionMenuId);
+                        }}
+                        className={`w-full rounded-xl border px-3 py-2 text-sm font-semibold text-left transition-colors ${
+                          darkMode
+                            ? 'border-slate-700 text-slate-200 hover:bg-slate-800'
+                            : 'border-gray-200 text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        {isOpenInboxActionMessageArchived ? 'Restore' : 'Archive'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openInboxDeleteModal(openInboxActionMenuId)}
+                        className={`w-full rounded-xl border px-3 py-2 text-sm font-semibold text-left transition-colors ${
+                          darkMode
+                            ? 'border-red-500/40 text-red-300 hover:bg-red-500/10'
+                            : 'border-red-200 text-red-600 hover:bg-red-50'
+                        }`}
+                      >
+                        Delete
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOpenInboxActionMenuId('')}
+                        className={`w-full rounded-xl border px-3 py-2 text-sm font-semibold text-left transition-colors ${
+                          darkMode
+                            ? 'border-slate-700 text-slate-300 hover:bg-slate-800'
+                            : 'border-gray-200 text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+
             <div className="grid grid-cols-1 xl:grid-cols-[330px_1fr] gap-4">
               <aside className="rounded-[30px] border border-[#9CFCC1] bg-[#046241] p-5 shadow-[0_24px_55px_-25px_rgba(4,98,65,0.95)]">
                 <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] mb-3 text-[#d7ffe8]">
                   Inbox Names
                 </p>
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <p className="text-[10px] text-[#d7ffe8]/90">
-                    Please Read the Messages
-                  </p>
-                  <div className="inline-flex items-center gap-1.5">
+                <p className="mt-[0.7rem] mb-2 text-[10px] text-[#d7ffe8]/90">
+                  Please Read the Messages
+                </p>
+                <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[10px] font-bold tracking-wide text-[#d7ffe8]">
                     <button
                       type="button"
-                      onClick={() => setInboxReadFilter((previous) => (previous === 'read' ? 'all' : 'read'))}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                      onClick={() => setInboxReadFilter('all')}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold tracking-wide transition-colors ${
+                        inboxReadFilter === 'all'
+                          ? 'bg-white text-[#046241] border border-white'
+                          : 'bg-transparent text-[#d7ffe8] border border-[#9CFCC1]/70 hover:bg-white/10'
+                      }`}
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInboxReadFilter('read')}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold tracking-wide transition-colors ${
                         inboxReadFilter === 'read'
                           ? 'bg-white text-[#046241] border border-white'
                           : 'bg-transparent text-[#d7ffe8] border border-[#9CFCC1]/70 hover:bg-white/10'
                       }`}
                     >
-                      Read
+                      read
                     </button>
                     <button
                       type="button"
-                      onClick={() => setInboxReadFilter((previous) => (previous === 'unread' ? 'all' : 'unread'))}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                      onClick={() => setInboxReadFilter('unread')}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold tracking-wide transition-colors ${
                         inboxReadFilter === 'unread'
                           ? 'bg-[#FFC370] text-[#5f3a00] border border-[#efb35a]'
                           : 'bg-transparent text-[#d7ffe8] border border-[#9CFCC1]/70 hover:bg-white/10'
                       }`}
                     >
-                      Unread
+                      unread
                     </button>
-                  </div>
+                    <button
+                      type="button"
+                      onClick={() => setInboxReadFilter('archived')}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold tracking-wide transition-colors ${
+                        inboxReadFilter === 'archived'
+                          ? 'bg-[#e5f9ef] text-[#046241] border border-[#9CFCC1]'
+                          : 'bg-transparent text-[#d7ffe8] border border-[#9CFCC1]/70 hover:bg-white/10'
+                      }`}
+                    >
+                      Archived
+                    </button>
                 </div>
 
                 <div className="rounded-[22px] border border-[#9CFCC1] bg-[#f3fff8] p-2 max-h-[370px] overflow-y-auto shadow-[inset_0_1px_0_rgba(255,255,255,0.88)]">
@@ -7845,18 +8187,24 @@ const Admin: React.FC = () => {
                         const messagePreview = asCleanText(messageItem.message) || 'No message';
                         const isUnread = !readInboxIds.includes(messageItem.id);
                         const isSelected = selectedInboxMessageId === messageItem.id;
-                      return (
-                          <motion.button
+                        return (
+                          <motion.div
                             key={messageItem.id}
-                            type="button"
                             onClick={() => handleInboxRowClick(messageItem.id)}
                             onPointerDown={() => handleInboxRowPointerDown(messageItem.id)}
                             onPointerUp={handleInboxRowPointerEnd}
                             onPointerLeave={handleInboxRowPointerEnd}
                             onPointerCancel={handleInboxRowPointerEnd}
+                            onKeyDown={(event) => {
+                              if (event.key !== 'Enter' && event.key !== ' ') return;
+                              event.preventDefault();
+                              handleInboxRowClick(messageItem.id);
+                            }}
                             whileTap={{ scale: 0.97 }}
                             transition={{ duration: 0.14, ease: 'easeOut' }}
-                            className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors min-h-[82px] shadow-[0_10px_20px_-16px_rgba(15,23,42,0.45)] ${
+                            role="button"
+                            tabIndex={0}
+                            className={`w-full relative rounded-2xl border px-4 py-3 text-left transition-colors min-h-[82px] shadow-[0_10px_20px_-16px_rgba(15,23,42,0.45)] cursor-pointer ${
                               isUnread
                                 ? 'bg-[#FFC370] border-[#efb35a] hover:bg-[#ffcf89]'
                                 : 'bg-[#F9F7F7] border-[#9CFCC1] hover:bg-[#ffffff]'
@@ -7871,17 +8219,35 @@ const Admin: React.FC = () => {
                                   {messagePreview}
                                 </p>
                               </div>
-                              {isUnread ? (
-                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#ffe3b7] text-[#6a3f00]">
-                                  Unread
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white text-[#6b7280] border border-[#d1d5db]">
-                                  Read
-                                </span>
-                              )}
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {isUnread ? (
+                                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#ffe3b7] text-[#6a3f00]">
+                                    Unread
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white text-[#6b7280] border border-[#d1d5db]">
+                                    Read
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setOpenInboxActionMenuId((previousId) => (previousId === messageItem.id ? '' : messageItem.id));
+                                  }}
+                                  className="h-7 w-7 rounded-full border border-[#d1d5db] bg-white text-[#4b5563] inline-flex items-center justify-center hover:bg-[#f3f4f6] transition-colors"
+                                  aria-label={`Actions for ${senderName}`}
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="8" r="1" />
+                                    <circle cx="12" cy="12" r="1" />
+                                    <circle cx="12" cy="16" r="1" />
+                                  </svg>
+                                </button>
+                              </div>
                             </div>
-                          </motion.button>
+                          </motion.div>
                         );
                       })}
                     </div>
@@ -8068,6 +8434,56 @@ const Admin: React.FC = () => {
                           className="mt-2 w-full rounded-2xl border border-[#9CFCC1] bg-white px-4 py-3 text-sm text-[#063a28] whitespace-pre-wrap resize-none shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
                         />
                       </label>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {inboxDeleteTargetId ? (
+                <motion.div
+                  className="fixed inset-0 z-[126] flex items-center justify-center p-4"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <button
+                    type="button"
+                    className="absolute inset-0 bg-black/45 backdrop-blur-[4px]"
+                    onClick={closeInboxDeleteModal}
+                    aria-label="Close delete confirmation"
+                  />
+                  <motion.div
+                    initial={{ y: 20, opacity: 0, scale: 0.98 }}
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
+                    exit={{ y: 14, opacity: 0, scale: 0.98 }}
+                    transition={{ duration: 0.18, ease: 'easeOut' }}
+                    className={`relative w-full max-w-md rounded-[24px] border p-5 shadow-2xl ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}
+                  >
+                    <h3 className={`text-lg font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                      Confirm Delete
+                    </h3>
+                    <p className={`mt-2 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-600'}`}>
+                      Delete message from <span className="font-semibold">{getInboxSenderName(inboxDeleteTargetMessage) || 'this user'}</span>? This cannot be undone.
+                    </p>
+                    <div className="mt-5 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={closeInboxDeleteModal}
+                        className={`px-3 py-2 rounded-lg border text-xs font-bold uppercase tracking-wide transition-colors ${
+                          darkMode ? 'border-slate-700 text-slate-200 hover:bg-slate-800' : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleConfirmInboxDelete}
+                        className="px-3 py-2 rounded-lg border border-red-700 bg-red-600 text-white text-xs font-bold uppercase tracking-wide transition-colors hover:bg-red-700"
+                      >
+                        Delete
+                      </button>
                     </div>
                   </motion.div>
                 </motion.div>
