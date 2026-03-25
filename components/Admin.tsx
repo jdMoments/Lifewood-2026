@@ -2186,6 +2186,30 @@ const Admin: React.FC = () => {
     };
   }, [previewInboxMessageId]);
 
+  useEffect(() => {
+    const handleEscapeClose = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+
+      if (resumePreviewApplicant) {
+        resumeAnalysisRequestRef.current += 1;
+        setResumePreviewApplicant(null);
+        setIsAnalyzingResume(false);
+        setResumeAnalysisResult(null);
+        setResumeAnalysisNotice('');
+        return;
+      }
+
+      if (selectedApplicant) {
+        setSelectedApplicant(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleEscapeClose);
+    return () => {
+      window.removeEventListener('keydown', handleEscapeClose);
+    };
+  }, [selectedApplicant, resumePreviewApplicant]);
+
   const fetchProjectSubmissions = async () => {
     setIsLoadingProjectSubmissions(true);
     setProjectSubmissionNotice('');
@@ -4052,13 +4076,13 @@ const Admin: React.FC = () => {
         : 'text-[10px] font-bold uppercase tracking-widest mb-1 text-gray-400');
   const applicantModalValueClass = isPendingApplicantModal
     ? (darkMode
-        ? "font-['Montserrat'] text-[17px] font-semibold text-slate-100"
-        : "font-['Montserrat'] text-[17px] font-semibold text-gray-900")
-    : 'text-sm font-medium';
+        ? "font-['Montserrat'] text-[15px] font-semibold text-slate-100"
+        : "font-['Montserrat'] text-[15px] font-semibold text-gray-900")
+    : 'text-[13px] font-medium';
   const applicantModalFieldCardClass = isPendingApplicantModal
     ? (darkMode
-        ? 'rounded-2xl border border-emerald-500/30 bg-slate-900/65 px-4 py-3 shadow-[0_20px_35px_-26px_rgba(16,185,129,0.75),0_10px_18px_-12px_rgba(0,0,0,0.65)]'
-        : 'rounded-2xl border border-emerald-200 bg-white px-4 py-3 shadow-[0_20px_35px_-26px_rgba(16,185,129,0.55),0_10px_18px_-12px_rgba(15,23,42,0.45)]')
+        ? 'rounded-2xl border border-emerald-500/30 bg-slate-900/65 px-4 py-3 shadow-[0_14px_26px_-22px_rgba(16,185,129,0.55),0_8px_14px_-10px_rgba(0,0,0,0.5)]'
+        : 'rounded-2xl border border-emerald-200 bg-white px-4 py-3 shadow-[0_14px_26px_-22px_rgba(16,185,129,0.42),0_8px_14px_-10px_rgba(15,23,42,0.35)]')
     : '';
   const selectedApplicantResumePoints = selectedApplicant ? applicantResumePointsById[selectedApplicant.id] : undefined;
   const isSelectedApplicantProcessed = selectedApplicantStatus === 'accepted' || selectedApplicantStatus === 'hired';
@@ -6888,26 +6912,26 @@ const Admin: React.FC = () => {
                 </div>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full text-center border-collapse">
                   <thead>
                     <tr className={`border-b ${darkMode ? 'border-slate-700' : 'border-black/5'}`}>
-                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Name</th>
-                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Email</th>
-                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Phone</th>
-                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Project Applied For</th>
-                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Date</th>
-                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Status</th>
+                      <th className={`py-4 text-center text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Name</th>
+                      <th className={`py-4 text-center text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Email</th>
+                      <th className={`py-4 text-center text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Phone</th>
+                      <th className={`py-4 text-center text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Project Applied For</th>
+                      <th className={`py-4 text-center text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Date</th>
+                      <th className={`py-4 text-center text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredPendingApplications.map((app) => (
                       <tr key={app.id} className={`border-b transition-colors ${darkMode ? 'border-slate-700' : 'border-black/5'} [&>td]:transition-colors [&:hover>td]:bg-[#f5eedb]`}>
-                        <td className={`py-4 font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{app.first_name} {app.last_name}</td>
-                        <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.email}</td>
-                        <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.phone || 'N/A'}</td>
-                        <td className={`py-4 text-sm font-bold ${darkMode ? 'text-emerald-300' : 'text-[#046241]'}`}>{getApplicantPositionLabel(app)}</td>
-                        <td className={`py-4 text-sm ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>{new Date(app.created_at).toLocaleDateString()}</td>
-                        <td className="py-4">
+                        <td className={`py-4 text-center font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{app.first_name} {app.last_name}</td>
+                        <td className={`py-4 text-center text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.email}</td>
+                        <td className={`py-4 text-center text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.phone || 'N/A'}</td>
+                        <td className={`py-4 text-center text-sm font-bold ${darkMode ? 'text-emerald-300' : 'text-[#046241]'}`}>{getApplicantPositionLabel(app)}</td>
+                        <td className={`py-4 text-center text-sm ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>{new Date(app.created_at).toLocaleDateString()}</td>
+                        <td className="py-4 text-center">
                           <motion.button
                             onClick={() => setSelectedApplicant(app)}
                             title="Review application and choose Accept or Decline"
@@ -7028,15 +7052,15 @@ const Admin: React.FC = () => {
                 </div>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full text-center border-collapse">
                   <thead>
                     <tr className={`border-b ${darkMode ? 'border-slate-700' : 'border-black/5'}`}>
-                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Name</th>
-                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Email</th>
-                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Project Applied For</th>
-                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Date</th>
-                      <th className={`py-4 text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Status</th>
-                      <th className={`py-4 pl-2 w-[180px] text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Action</th>
+                      <th className={`py-4 text-center text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Name</th>
+                      <th className={`py-4 text-center text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Email</th>
+                      <th className={`py-4 text-center text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Project Applied For</th>
+                      <th className={`py-4 text-center text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Date</th>
+                      <th className={`py-4 text-center text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Status</th>
+                      <th className={`py-4 text-center pl-2 w-[180px] text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -7048,12 +7072,12 @@ const Admin: React.FC = () => {
                           selectedProcessedApplicantId === app.id ? (darkMode ? '[&>td]:bg-emerald-500/10' : '[&>td]:bg-emerald-50/80') : ''
                         }`}
                       >
-                        <td className={`py-4 font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{app.first_name} {app.last_name}</td>
-                        <td className={`py-4 text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.email}</td>
-                        <td className={`py-4 text-sm font-bold ${darkMode ? 'text-emerald-300' : 'text-[#046241]'}`}>{getApplicantPositionLabel(app)}</td>
-                        <td className={`py-4 text-sm ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>{new Date(app.updated_at || app.created_at).toLocaleDateString()}</td>
-                        <td className="py-4">
-                          <div className="flex flex-wrap items-center gap-2">
+                        <td className={`py-4 text-center font-medium ${darkMode ? 'text-slate-200' : 'text-gray-900'}`}>{app.first_name} {app.last_name}</td>
+                        <td className={`py-4 text-center text-sm ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>{app.email}</td>
+                        <td className={`py-4 text-center text-sm font-bold ${darkMode ? 'text-emerald-300' : 'text-[#046241]'}`}>{getApplicantPositionLabel(app)}</td>
+                        <td className={`py-4 text-center text-sm ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>{new Date(app.updated_at || app.created_at).toLocaleDateString()}</td>
+                        <td className="py-4 text-center">
+                          <div className="flex flex-wrap items-center justify-center gap-2">
                             {(() => {
                               const currentStatus = normalizeApplicationStatus(app.status);
                               const isAcceptedStatus = currentStatus === 'accepted';
@@ -7081,8 +7105,8 @@ const Admin: React.FC = () => {
                             })()}
                           </div>
                         </td>
-                        <td className="py-4 pl-2">
-                          <div className="relative inline-flex items-center gap-2" ref={openApplicantActionMenuId === app.id ? applicantActionMenuRef : null}>
+                        <td className="py-4 pl-2 text-center">
+                          <div className="relative inline-flex items-center justify-center gap-2" ref={openApplicantActionMenuId === app.id ? applicantActionMenuRef : null}>
                             {(normalizeApplicationStatus(app.status) === 'accepted' || normalizeApplicationStatus(app.status) === 'hired') ? (
                               <button
                                 type="button"
@@ -7222,26 +7246,26 @@ const Admin: React.FC = () => {
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.98, y: 120 }}
                     transition={{ type: 'spring', stiffness: 240, damping: 24, mass: 0.9 }}
-                    className={`relative w-full max-w-3xl rounded-[34px] p-8 shadow-2xl max-h-[90vh] overflow-y-auto ${
+                    className={`relative w-full max-w-3xl rounded-[34px] p-8 shadow-xl max-h-[90vh] overflow-y-auto ${
                       isPendingApplicantModal
                         ? (darkMode
-                            ? 'bg-gradient-to-br from-slate-800 via-slate-800 to-slate-900 border border-emerald-500/40 text-slate-100 shadow-[0_38px_72px_-34px_rgba(16,185,129,0.65),0_18px_42px_-28px_rgba(15,23,42,0.92)]'
-                            : 'bg-white border border-emerald-200 text-gray-900 shadow-[0_38px_72px_-34px_rgba(16,185,129,0.55),0_18px_42px_-28px_rgba(15,23,42,0.55)]')
+                            ? 'bg-gradient-to-br from-slate-800 via-slate-800 to-slate-900 border border-emerald-500/40 text-slate-100 shadow-[0_28px_52px_-30px_rgba(16,185,129,0.55),0_14px_28px_-20px_rgba(15,23,42,0.82)]'
+                            : 'bg-white border border-emerald-200 text-gray-900 shadow-[0_28px_52px_-30px_rgba(16,185,129,0.45),0_14px_28px_-20px_rgba(15,23,42,0.45)]')
                         : (darkMode ? 'bg-slate-800 text-slate-200' : 'bg-white text-gray-900')
                     }`}
                   >
                     {isPendingApplicantModal ? (
                       <div className={`mb-7 rounded-[24px] border px-6 py-5 ${
                         darkMode
-                          ? 'bg-gradient-to-br from-emerald-500/15 via-slate-900/80 to-emerald-900/15 border-emerald-400/35 shadow-[0_20px_35px_-24px_rgba(16,185,129,0.75)]'
-                          : 'bg-gradient-to-br from-white to-emerald-50 border-emerald-300 shadow-[0_18px_32px_-24px_rgba(16,185,129,0.7)]'
+                          ? 'bg-gradient-to-br from-emerald-500/15 via-slate-900/80 to-emerald-900/15 border-emerald-400/35 shadow-[0_14px_26px_-20px_rgba(16,185,129,0.6)]'
+                          : 'bg-gradient-to-br from-white to-emerald-50 border-emerald-300 shadow-[0_12px_22px_-18px_rgba(16,185,129,0.55)]'
                       }`}>
-                        <h4 className={`font-['Montserrat'] text-[30px] leading-tight font-extrabold ${
+                        <h4 className={`font-['Montserrat'] text-[26px] leading-tight font-extrabold ${
                           darkMode ? 'text-emerald-300' : 'text-emerald-800'
                         }`}>
                           Pending Applicant Review
                         </h4>
-                        <p className={`font-['Montserrat'] mt-2 text-[15px] font-semibold ${
+                        <p className={`font-['Montserrat'] mt-2 text-[14px] font-semibold ${
                           darkMode ? 'text-slate-200' : 'text-gray-700'
                         }`}>
                           Review applicant details, set interview schedule, and finalize your approval decision.
@@ -7249,21 +7273,23 @@ const Admin: React.FC = () => {
                       </div>
                     ) : null}
 
-                    <div className="flex justify-between items-start mb-8">
+                    <button
+                      onClick={() => setSelectedApplicant(null)}
+                      className={`absolute top-2 right-2 p-2 rounded-full transition-colors ${darkMode ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-gray-100 text-gray-400'}`}
+                      title="Close"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+
+                    <div className="mb-8 pr-10">
                       <div>
-                        <h3 className={`${isPendingApplicantModal ? "font-['Montserrat'] text-3xl font-extrabold mb-1" : 'text-2xl font-bold mb-1'}`}>
+                        <h3 className={`${isPendingApplicantModal ? "font-['Montserrat'] text-[28px] font-extrabold mb-1" : 'text-xl font-bold mb-1'}`}>
                           {selectedApplicant.first_name} {selectedApplicant.last_name}
                         </h3>
-                        <p className={`${isPendingApplicantModal ? "font-['Montserrat'] text-base font-bold" : 'text-sm font-medium'} ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                        <p className={`${isPendingApplicantModal ? "font-['Montserrat'] text-[15px] font-bold" : 'text-xs font-medium'} ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>
                           {getApplicantPositionLabel(selectedApplicant)}
                         </p>
                       </div>
-                      <button 
-                        onClick={() => setSelectedApplicant(null)}
-                        className={`p-2 rounded-full transition-colors ${darkMode ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-gray-100 text-gray-400'}`}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                      </button>
                     </div>
 
                     <div className="space-y-7 mb-10">
@@ -7304,22 +7330,6 @@ const Admin: React.FC = () => {
                         <p className={`${isPendingApplicantModal ? "font-['Montserrat'] text-[16px] font-medium leading-relaxed" : 'text-sm leading-relaxed'} ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>
                           {selectedApplicant.experience || 'N/A'}
                         </p>
-                      </div>
-
-                      <div className={applicantModalFieldCardClass}>
-                        <p className={applicantModalLabelClass}>Portfolio</p>
-                        {selectedApplicant.portfolio_url ? (
-                          <a 
-                            href={selectedApplicant.portfolio_url} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className={`${isPendingApplicantModal ? "font-['Montserrat'] text-[16px] font-semibold" : 'text-sm font-medium'} text-emerald-500 hover:underline break-all`}
-                          >
-                            {selectedApplicant.portfolio_url}
-                          </a>
-                        ) : (
-                          <p className={applicantModalValueClass}>N/A</p>
-                        )}
                       </div>
 
                       <div className={`p-5 rounded-[24px] border ${
@@ -7615,43 +7625,54 @@ const Admin: React.FC = () => {
                           ) : null}
 
                           {resumeAnalysisResult ? (
-                            <div className="mt-4 space-y-4">
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <label className="block">
-                                  <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Total Points</span>
-                                  <input
-                                    readOnly
-                                    value={resumeAnalysisResult.totalPoints}
-                                    className={`mt-1 w-full rounded-xl border px-3 py-2.5 text-sm font-bold ${darkMode ? 'bg-slate-900 border-slate-700 text-emerald-300' : 'bg-white border-gray-200 text-emerald-700'}`}
-                                  />
-                                </label>
-                                <label className="block">
-                                  <span className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-500'}`}>Score Range</span>
-                                  <input
-                                    readOnly
-                                    value={`${resumeAnalysisResult.totalPoints} / ${resumeAnalysisResult.maxPoints}`}
-                                    className={`mt-1 w-full rounded-xl border px-3 py-2.5 text-sm font-semibold ${darkMode ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-gray-200 text-gray-700'}`}
-                                  />
-                                </label>
-                              </div>
+                            <div className="mt-4 flex flex-col items-center gap-4">
+                              {(() => {
+                                const score = resumeAnalysisResult.totalPoints;
+                                const maxScore = Math.max(1, resumeAnalysisResult.maxPoints);
+                                const scorePercent = Math.max(0, Math.min(100, Math.round((score / maxScore) * 100)));
+                                const radius = 54;
+                                const circumference = 2 * Math.PI * radius;
+                                const dashOffset = circumference - (scorePercent / 100) * circumference;
 
-                              <div className={`rounded-xl border overflow-hidden ${darkMode ? 'border-slate-700' : 'border-gray-200'}`}>
-                                <div className={`max-h-[340px] overflow-y-auto ${darkMode ? 'bg-slate-900/40' : 'bg-white'}`}>
-                                  {resumeAnalysisResult.sections.map((section) => (
-                                    <div key={section.key} className={`px-3 py-3 border-b last:border-b-0 ${darkMode ? 'border-slate-700' : 'border-gray-100'}`}>
-                                      <div className="flex items-center justify-between gap-3">
-                                        <p className={`text-sm font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{section.label}</p>
-                                        <span className={`text-xs font-bold px-2 py-1 rounded-full ${darkMode ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
-                                          {section.points} / {section.max}
-                                        </span>
+                                return (
+                                  <>
+                                    <div className="relative h-44 w-44">
+                                      <svg className="h-full w-full -rotate-90" viewBox="0 0 140 140" aria-label="Scored earn progress">
+                                        <circle
+                                          cx="70"
+                                          cy="70"
+                                          r={radius}
+                                          fill="none"
+                                          stroke={darkMode ? '#334155' : '#d1d5db'}
+                                          strokeWidth="12"
+                                        />
+                                        <circle
+                                          cx="70"
+                                          cy="70"
+                                          r={radius}
+                                          fill="none"
+                                          stroke="#10b981"
+                                          strokeWidth="12"
+                                          strokeLinecap="round"
+                                          strokeDasharray={circumference}
+                                          strokeDashoffset={dashOffset}
+                                        />
+                                      </svg>
+                                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                        <p className={`text-3xl font-black ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                                          {score}
+                                        </p>
+                                        <p className={`text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                                          Scored Earn
+                                        </p>
                                       </div>
-                                      <p className={`text-[11px] mt-1 leading-relaxed ${darkMode ? 'text-slate-400' : 'text-gray-500'}`}>
-                                        {section.notes.join(' | ')}
-                                      </p>
                                     </div>
-                                  ))}
-                                </div>
-                              </div>
+                                    <p className={`text-xs font-semibold ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>
+                                      {score} / {maxScore} ({scorePercent}%)
+                                    </p>
+                                  </>
+                                );
+                              })()}
                             </div>
                           ) : null}
 
