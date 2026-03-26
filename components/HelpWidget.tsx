@@ -7,9 +7,79 @@ interface Message {
   text: string;
 }
 
-const getCurrentRoutePath = () => window.location.hash.substring(1) || '/';
+const INACTIVITY_REFRESH_MS = 10 * 60 * 1000;
+
+const normalizeRoutePath = (routePath: string) => {
+  const trimmedRoute = (routePath || '').trim();
+  if (!trimmedRoute) return '/';
+
+  const [withoutQuery] = trimmedRoute.split('?');
+  const normalizedRoute = withoutQuery.replace(/\/+$/, '') || '/';
+
+  if (normalizedRoute === 'innovation') {
+    return 'innovation';
+  }
+
+  return normalizedRoute.startsWith('/') ? normalizedRoute : `/${normalizedRoute}`;
+};
+
+const getCurrentRoutePath = () => {
+  const hashRoute = window.location.hash.substring(1);
+  if (hashRoute) {
+    if (!hashRoute.startsWith('/')) return hashRoute;
+    return normalizeRoutePath(hashRoute);
+  }
+  return normalizeRoutePath(window.location.pathname || '/');
+};
 
 const ADMIN_EMAIL = 'damayojholmer@gmail.com';
+
+type RecommendationCategory = 'public' | 'user' | 'admin';
+
+const RECOMMENDATION_TOPICS: Record<RecommendationCategory, string[][]> = {
+  public: [
+    [
+      'Give me a quick summary of Lifewood from Home to News.',
+      'What AI services and project types does Lifewood offer?',
+      'Show key highlights from Internal and External News.',
+      'How can I contact Lifewood or apply from Careers?',
+    ],
+    [
+      'What does Lifewood do in AI data, annotation, and curation?',
+      'Which pages should I visit first: Services, Projects, or News?',
+      'Tell me the latest company updates from the News pages.',
+      'Where can I learn about offices, policies, and terms?',
+    ],
+  ],
+  user: [
+    [
+      'Summarize my Dashboard progress, tasks, and performance.',
+      'What tasks are pending and which deadline is nearest?',
+      'How can I improve my completion and efficiency score?',
+      'What account settings can I update right now?',
+    ],
+    [
+      'Show me a quick status for Dashboard, Tasks, and Performance.',
+      'How do User and Employee task views differ?',
+      'What should I prioritize today based on my current task data?',
+      'Can you explain my progress metrics in simple terms?',
+    ],
+  ],
+  admin: [
+    [
+      'Summarize Dashboard cards: applicants, interns, employees, active now.',
+      'What stands out in Analytics, Task, and Evaluation right now?',
+      'Give me a quick status of Applicants, Projects, and Inbox.',
+      'What needs attention in Manage Users and Settings?',
+    ],
+    [
+      'Show a short admin overview across Reports and Evaluation.',
+      'Which applicant pipeline statuses need follow-up today?',
+      'Give me an inbox and project submission health check.',
+      'What are the top admin actions to do now?',
+    ],
+  ],
+};
 
 const getChatScopeFromRoute = (
   routePath: string,
@@ -33,16 +103,50 @@ const getChatScopeFromRoute = (
   return 'user';
 };
 
+const getRecommendationCategoryFromRoute = (
+  routePath: string,
+  userRole?: string,
+  userEmail?: string,
+  isAuthenticated?: boolean
+): RecommendationCategory => {
+  const scope = getChatScopeFromRoute(routePath, userRole, userEmail, isAuthenticated);
+  if (scope === 'admin') return 'admin';
+  if (scope === 'user' || scope === 'employees') return 'user';
+  return 'public';
+};
+
 const HelpWidget: React.FC = () => {
   const { user, profile } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [widgetResetKey, setWidgetResetKey] = useState(0);
+  const [routePath, setRoutePath] = useState(getCurrentRoutePath());
+  const [recommendationSetIndex, setRecommendationSetIndex] = useState(0);
+  const [hideRecommendationTopics, setHideRecommendationTopics] = useState(false);
+  const [lastUserInteractionAt, setLastUserInteractionAt] = useState(() => Date.now());
   const [messages, setMessages] = useState<Message[]>([
     { role: 'model', text: "Hello! I'm your Lifewood AI assistant. How can I help you today?" }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const suppressToggleUntilRef = useRef(0);
+
+  const chatScope = getChatScopeFromRoute(routePath, profile?.role, user?.email, Boolean(user));
+  const recommendationCategory = getRecommendationCategoryFromRoute(
+    routePath,
+    profile?.role,
+    user?.email,
+    Boolean(user)
+  );
+  const recommendationSets = RECOMMENDATION_TOPICS[recommendationCategory] || [];
+  const recommendationTopics =
+    recommendationSets[recommendationSetIndex % Math.max(1, recommendationSets.length)] || [];
+
+  const markUserInteraction = () => {
+    setLastUserInteractionAt(Date.now());
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -52,41 +156,83 @@ const HelpWidget: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    const handleRouteChange = () => {
+      setRoutePath(getCurrentRoutePath());
+    };
+
+    window.addEventListener('hashchange', handleRouteChange);
+    window.addEventListener('popstate', handleRouteChange);
+    return () => {
+      window.removeEventListener('hashchange', handleRouteChange);
+      window.removeEventListener('popstate', handleRouteChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    setRecommendationSetIndex(0);
+    setHideRecommendationTopics(false);
+  }, [routePath, recommendationCategory]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const inactivityTimer = window.setTimeout(() => {
+      setRecommendationSetIndex((previous) => {
+        if (recommendationSets.length <= 1) return previous;
+        return (previous + 1) % recommendationSets.length;
+      });
+      setHideRecommendationTopics(false);
+      setMessages((previous) => [
+        ...previous,
+        { role: 'model', text: 'I added new recommended topics below if you want to continue.' },
+      ]);
+      setLastUserInteractionAt(Date.now());
+    }, INACTIVITY_REFRESH_MS);
+
+    return () => {
+      window.clearTimeout(inactivityTimer);
+    };
+  }, [isOpen, lastUserInteractionAt, recommendationSets.length]);
+
   const handleCloseChat = () => {
     setIsOpen(false);
+    setIsExpanded(false);
+    setHideRecommendationTopics(false);
     setWidgetResetKey((prev) => prev + 1);
   };
 
   const handleToggleChat = () => {
+    if (Date.now() < suppressToggleUntilRef.current) return;
+
     setIsOpen((prev) => {
       const next = !prev;
       if (!next) {
         setWidgetResetKey((value) => value + 1);
+        setIsExpanded(false);
+      } else {
+        markUserInteraction();
       }
       return next;
     });
   };
 
-  const handleSendMessage = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!input.trim() || isLoading) return;
+  const sendMessageToAssistant = async (userMessage: string) => {
+    const trimmedMessage = (userMessage || '').trim();
+    if (!trimmedMessage || isLoading) return;
 
-    const userMessage = input.trim();
-    setInput('');
-    setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
+    setMessages(prev => [...prev, { role: 'user', text: trimmedMessage }]);
     setIsLoading(true);
 
     try {
-      const routePath = getCurrentRoutePath();
-      const scope = getChatScopeFromRoute(routePath, profile?.role, user?.email, Boolean(user));
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          message: userMessage,
-          scope,
+          message: trimmedMessage,
+          scope: chatScope,
           routePath,
           userContext: {
             id: user?.id || '',
@@ -143,12 +289,40 @@ const HelpWidget: React.FC = () => {
     }
   };
 
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!input.trim() || isLoading) return;
+    const userMessage = input.trim();
+    setInput('');
+    markUserInteraction();
+    await sendMessageToAssistant(userMessage);
+  };
+
+  const handleRecommendationClick = async (topic: string) => {
+    if (!topic || isLoading) return;
+    setHideRecommendationTopics(true);
+    setInput('');
+    markUserInteraction();
+    await sendMessageToAssistant(topic);
+    inputRef.current?.focus();
+  };
+
   return (
     <motion.div
       key={widgetResetKey}
       drag
       dragMomentum={false}
       dragElastic={0.12}
+      onDragStart={() => {
+        suppressToggleUntilRef.current = Date.now() + 320;
+      }}
+      onDragEnd={(_, dragInfo: any) => {
+        const movedX = Math.abs(dragInfo?.offset?.x || 0);
+        const movedY = Math.abs(dragInfo?.offset?.y || 0);
+        if (movedX > 4 || movedY > 4) {
+          suppressToggleUntilRef.current = Date.now() + 320;
+        }
+      }}
       className="fixed bottom-8 right-8 z-[9999] flex flex-col items-end touch-none"
     >
       <AnimatePresence>
@@ -157,10 +331,14 @@ const HelpWidget: React.FC = () => {
             initial={{ opacity: 0, scale: 0.9, y: 20, transformOrigin: 'bottom right' }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="mb-4 w-80 sm:w-96 bg-white rounded-3xl shadow-2xl border border-black/5 overflow-hidden flex flex-col max-h-[500px]"
+            className={`mb-4 bg-white rounded-3xl shadow-2xl border border-black/5 overflow-hidden flex flex-col ${
+              isExpanded
+                ? 'w-[min(calc(100vw-2rem),36rem)] h-[min(75vh,42rem)]'
+                : 'w-[min(calc(100vw-2rem),24rem)] h-[32rem]'
+            }`}
           >
             {/* Chat Header */}
-            <div className="bg-black text-white p-4 flex items-center justify-between">
+            <div className="bg-black text-white p-4 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-[#d4f05c] flex items-center justify-center text-black font-bold text-xs">
                   LW
@@ -170,19 +348,44 @@ const HelpWidget: React.FC = () => {
                   <p className="text-[10px] text-gray-400">Online</p>
                 </div>
               </div>
-              <button 
-                onClick={handleCloseChat}
-                className="text-gray-400 hover:text-white transition-colors"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsExpanded((previous) => !previous)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                  title={isExpanded ? 'Collapse chat' : 'Expand chat'}
+                >
+                  {isExpanded ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="15 3 21 3 21 9"></polyline>
+                      <polyline points="9 21 3 21 3 15"></polyline>
+                      <line x1="21" y1="3" x2="14" y2="10"></line>
+                      <line x1="3" y1="21" x2="10" y2="14"></line>
+                    </svg>
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="4 14 10 14 10 20"></polyline>
+                      <polyline points="20 10 14 10 14 4"></polyline>
+                      <line x1="14" y1="10" x2="21" y2="3"></line>
+                      <line x1="3" y1="21" x2="10" y2="14"></line>
+                    </svg>
+                  )}
+                </button>
+                <button 
+                  onClick={handleCloseChat}
+                  className="text-gray-400 hover:text-white transition-colors"
+                  title="Close chat"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* Messages Area */}
-            <div className="flex-grow overflow-y-auto p-4 space-y-4 min-h-[300px] bg-gray-50">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 bg-gray-50">
               {messages.map((msg, i) => (
                 <div 
                   key={i} 
@@ -212,25 +415,52 @@ const HelpWidget: React.FC = () => {
             </div>
 
             {/* Input Area */}
-            <form onSubmit={handleSendMessage} className="p-4 border-t border-black/5 flex gap-2 bg-white">
-              <input 
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Type your message..."
-                className="flex-grow bg-gray-50 border border-black/5 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-[#d4f05c] transition-colors"
-              />
-              <button 
-                type="submit"
-                disabled={isLoading || !input.trim()}
-                className="bg-black text-white p-2 rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-              </button>
-            </form>
+            <div className="p-4 border-t border-black/5 bg-white shrink-0">
+              {!hideRecommendationTopics ? (
+                <div className="mb-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                    Recommended Topics
+                  </p>
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {recommendationTopics.slice(0, 4).map((topic, topicIndex) => (
+                      <button
+                        key={`${recommendationCategory}-${recommendationSetIndex}-${topicIndex}`}
+                        type="button"
+                        onClick={() => handleRecommendationClick(topic)}
+                        disabled={isLoading}
+                        className="text-left text-xs px-3 py-2 rounded-xl border border-black/10 bg-gray-50 hover:bg-black hover:text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {topic}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <form onSubmit={handleSendMessage} className="flex gap-2">
+                <input 
+                  ref={inputRef}
+                  type="text"
+                  value={input}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    markUserInteraction();
+                  }}
+                  placeholder="Type your message..."
+                  className="flex-grow bg-gray-50 border border-black/5 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-[#d4f05c] transition-colors"
+                />
+                <button 
+                  type="submit"
+                  disabled={isLoading || !input.trim()}
+                  className="bg-black text-white p-2 rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                </button>
+              </form>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

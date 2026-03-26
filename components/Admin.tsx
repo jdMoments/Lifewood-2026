@@ -331,6 +331,9 @@ const Admin: React.FC = () => {
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const [applications, setApplications] = useState<AdminApplicationItem[]>([]);
   const [selectedApplicant, setSelectedApplicant] = useState<AdminApplicationItem | null>(null);
+  const [acceptApplicantConfirmTarget, setAcceptApplicantConfirmTarget] = useState<AdminApplicationItem | null>(null);
+  const [declineApplicantConfirmTarget, setDeclineApplicantConfirmTarget] = useState<AdminApplicationItem | null>(null);
+  const [hireApplicantConfirmTarget, setHireApplicantConfirmTarget] = useState<AdminApplicationItem | null>(null);
   const [pendingApplicantNameSearch, setPendingApplicantNameSearch] = useState('');
   const [pendingApplicantProjectFilter, setPendingApplicantProjectFilter] = useState('all');
   const [isPendingApplicantProjectMenuOpen, setIsPendingApplicantProjectMenuOpen] = useState(false);
@@ -499,6 +502,9 @@ const Admin: React.FC = () => {
     setIsAnalyzingResume(false);
     setResumeAnalysisResult(null);
     setResumeAnalysisNotice('');
+    setAcceptApplicantConfirmTarget(null);
+    setDeclineApplicantConfirmTarget(null);
+    setHireApplicantConfirmTarget(null);
   }, [selectedApplicant]);
 
   useEffect(() => {
@@ -2347,6 +2353,21 @@ const Admin: React.FC = () => {
     const handleEscapeClose = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
 
+      if (acceptApplicantConfirmTarget) {
+        setAcceptApplicantConfirmTarget(null);
+        return;
+      }
+
+      if (declineApplicantConfirmTarget) {
+        setDeclineApplicantConfirmTarget(null);
+        return;
+      }
+
+      if (hireApplicantConfirmTarget) {
+        setHireApplicantConfirmTarget(null);
+        return;
+      }
+
       if (resumePreviewApplicant) {
         resumeAnalysisRequestRef.current += 1;
         setResumePreviewApplicant(null);
@@ -2365,7 +2386,7 @@ const Admin: React.FC = () => {
     return () => {
       window.removeEventListener('keydown', handleEscapeClose);
     };
-  }, [selectedApplicant, resumePreviewApplicant]);
+  }, [selectedApplicant, resumePreviewApplicant, acceptApplicantConfirmTarget, declineApplicantConfirmTarget, hireApplicantConfirmTarget]);
 
   const fetchProjectSubmissions = async () => {
     setIsLoadingProjectSubmissions(true);
@@ -3933,6 +3954,42 @@ const Admin: React.FC = () => {
     }
   };
 
+  const handleRequestAcceptApplicant = (application: AdminApplicationItem) => {
+    if (!application?.id) return;
+    setAcceptApplicantConfirmTarget(application);
+  };
+
+  const handleConfirmAcceptApplicant = async () => {
+    if (!acceptApplicantConfirmTarget?.id) return;
+    const targetApplication = acceptApplicantConfirmTarget;
+    setAcceptApplicantConfirmTarget(null);
+    await handleUpdateApplicationStatus(targetApplication, 'accepted');
+  };
+
+  const handleRequestDeclineApplicant = (application: AdminApplicationItem) => {
+    if (!application?.id) return;
+    setDeclineApplicantConfirmTarget(application);
+  };
+
+  const handleConfirmDeclineApplicant = async () => {
+    if (!declineApplicantConfirmTarget?.id) return;
+    const targetApplication = declineApplicantConfirmTarget;
+    setDeclineApplicantConfirmTarget(null);
+    await handleUpdateApplicationStatus(targetApplication, 'declined');
+  };
+
+  const handleRequestHireApplicant = (application: AdminApplicationItem) => {
+    if (!application?.id) return;
+    setHireApplicantConfirmTarget(application);
+  };
+
+  const handleConfirmHireApplicant = async () => {
+    if (!hireApplicantConfirmTarget?.id) return;
+    const targetApplication = hireApplicantConfirmTarget;
+    setHireApplicantConfirmTarget(null);
+    await handleMarkApplicationAsHired(targetApplication);
+  };
+
   const handleMarkApplicationAsHired = async (application: any) => {
     if (!application?.id) return;
 
@@ -4277,6 +4334,15 @@ const Admin: React.FC = () => {
         : 'rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-[0_10px_20px_-18px_rgba(15,23,42,0.25)]');
   const selectedApplicantResumePoints = selectedApplicant ? applicantResumePointsById[selectedApplicant.id] : undefined;
   const isSelectedApplicantProcessed = selectedApplicantStatus === 'accepted' || selectedApplicantStatus === 'hired';
+  const acceptConfirmApplicantName = acceptApplicantConfirmTarget
+    ? `${asCleanText(acceptApplicantConfirmTarget.first_name)} ${asCleanText(acceptApplicantConfirmTarget.last_name)}`.trim() || 'this applicant'
+    : 'this applicant';
+  const declineConfirmApplicantName = declineApplicantConfirmTarget
+    ? `${asCleanText(declineApplicantConfirmTarget.first_name)} ${asCleanText(declineApplicantConfirmTarget.last_name)}`.trim() || 'this applicant'
+    : 'this applicant';
+  const hireConfirmApplicantName = hireApplicantConfirmTarget
+    ? `${asCleanText(hireApplicantConfirmTarget.first_name)} ${asCleanText(hireApplicantConfirmTarget.last_name)}`.trim() || 'this applicant'
+    : 'this applicant';
   const isResumePreviewProcessedApplicant = resumePreviewApplicant
     ? (() => {
         const previewStatus = normalizeApplicationStatus(resumePreviewApplicant.status);
@@ -7087,18 +7153,20 @@ const Admin: React.FC = () => {
                     <h3 className={`text-3xl font-extrabold leading-tight ${darkMode ? 'text-slate-100' : 'text-[#123f2f]'}`}>New Applicants</h3>
                     <p className={`text-sm font-semibold mt-4 ${darkMode ? 'text-slate-300' : 'text-gray-600'}`}>Pending Applicants</p>
                   </div>
-                  <div className="relative mt-2 sm:mt-0" ref={pendingApplicantProjectMenuRef}>
+                </div>
+                <div className="flex items-center gap-2 lg:ml-auto">
+                  <div className="relative shrink-0" ref={pendingApplicantProjectMenuRef}>
                     <button
                       type="button"
                       onClick={() => setIsPendingApplicantProjectMenuOpen((previous) => !previous)}
-                      className={`relative h-11 min-w-[300px] rounded-xl border-2 px-3 pr-8 text-xs font-extrabold inline-flex items-center justify-center text-center focus:outline-none shadow-[0_5px_0_rgba(6,58,40,0.18),0_11px_18px_-12px_rgba(2,54,35,0.8)] transition-all active:translate-y-[1px] active:shadow-[0_3px_0_rgba(6,58,40,0.2),0_7px_14px_-12px_rgba(2,54,35,0.7)] ${
+                      className={`relative h-10 w-auto whitespace-nowrap rounded-xl border-2 px-3 pr-8 text-xs font-extrabold inline-flex items-center justify-center text-center focus:outline-none shadow-[0_5px_0_rgba(6,58,40,0.18),0_11px_18px_-12px_rgba(2,54,35,0.8)] transition-all active:translate-y-[1px] active:shadow-[0_3px_0_rgba(6,58,40,0.2),0_7px_14px_-12px_rgba(2,54,35,0.7)] ${
                         darkMode
                           ? 'bg-slate-900 border-emerald-500/60 text-emerald-300'
                           : 'bg-white border-emerald-400 text-emerald-800'
                       }`}
                       title="Filter pending applicants by project applied"
                     >
-                      <span className="block w-full text-center truncate">{pendingApplicantProjectFilterLabel}</span>
+                      <span>{pendingApplicantProjectFilterLabel}</span>
                       <span className="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center">
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -7123,7 +7191,7 @@ const Admin: React.FC = () => {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -4 }}
                           transition={{ duration: 0.14 }}
-                          className={`absolute top-[calc(100%+6px)] left-0 z-30 min-w-[300px] max-h-[260px] overflow-y-auto rounded-xl border shadow-lg ${
+                          className={`absolute top-[calc(100%+6px)] left-0 z-30 min-w-full w-max max-h-[260px] overflow-y-auto rounded-xl border shadow-lg ${
                             darkMode ? 'bg-slate-900 border-emerald-500/30' : 'bg-white border-gray-200'
                           }`}
                         >
@@ -7135,7 +7203,7 @@ const Admin: React.FC = () => {
                                 setPendingApplicantProjectFilter(option.value);
                                 setIsPendingApplicantProjectMenuOpen(false);
                               }}
-                              className={`w-full text-left px-3 py-2 text-xs font-bold transition-colors ${
+                              className={`block w-full whitespace-nowrap text-center px-3 py-2 text-xs font-bold transition-colors ${
                                 pendingApplicantProjectFilter === option.value
                                   ? darkMode
                                     ? 'bg-emerald-500/20 text-emerald-200'
@@ -7152,8 +7220,6 @@ const Admin: React.FC = () => {
                       ) : null}
                     </AnimatePresence>
                   </div>
-                </div>
-                <div className="flex items-center gap-2 lg:ml-auto">
                   <div className={`group flex items-center h-10 rounded-xl border overflow-hidden transition-all ${
                     darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'
                   }`}>
@@ -7210,7 +7276,7 @@ const Admin: React.FC = () => {
                             title="Review application and choose Accept or Decline"
                             whileTap={{ scale: 0.92 }}
                             transition={{ duration: 0.16, ease: 'easeOut' }}
-                            className="inline-flex items-center text-[10px] font-extrabold uppercase tracking-widest px-3 py-1.5 rounded-lg border border-[#efb35a] bg-[#FFC370] text-[#5f3a00] shadow-[0_4px_0_#e8aa50,0_10px_16px_-14px_rgba(126,79,9,0.9)] transition-all hover:brightness-105 active:translate-y-[1px] active:shadow-[0_2px_0_#cc8b32,0_8px_12px_-12px_rgba(126,79,9,0.85)]"
+                            className="inline-flex text-[10px] font-extrabold uppercase tracking-widest px-3 py-1.5 rounded-lg border border-[#f59e0b]/40 bg-white text-[#d97706] shadow-[0_4px_0_#fde7c2,0_10px_16px_-12px_rgba(180,83,9,0.45)] transition-all hover:bg-[#f59e0b] hover:text-white hover:shadow-[0_4px_0_#d97706,0_10px_16px_-12px_rgba(180,83,9,0.75)] active:translate-y-[1px] active:shadow-[0_2px_0_#d97706,0_8px_14px_-12px_rgba(180,83,9,0.7)] focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f59e0b]/40 focus-visible:ring-offset-0"
                           >
                             Pending
                           </motion.button>
@@ -7231,18 +7297,21 @@ const Admin: React.FC = () => {
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-6">
                 <div className="flex items-center gap-2">
                   <h3 className={`text-xl font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Processed Applicants</h3>
-                  <div className="relative" ref={processedApplicantStatusMenuRef}>
+                </div>
+
+                <div className="flex items-center gap-2 lg:ml-auto">
+                  <div className="relative shrink-0" ref={processedApplicantStatusMenuRef}>
                     <button
                       type="button"
                       onClick={() => setIsProcessedApplicantStatusMenuOpen((prev) => !prev)}
-                      className={`relative h-11 min-w-[170px] rounded-xl border-2 px-3 pr-8 text-xs font-extrabold uppercase tracking-widest inline-flex items-center justify-center text-center focus:outline-none shadow-[0_5px_0_rgba(6,58,40,0.18),0_11px_18px_-12px_rgba(2,54,35,0.8)] transition-all active:translate-y-[1px] active:shadow-[0_3px_0_rgba(6,58,40,0.2),0_7px_14px_-12px_rgba(2,54,35,0.7)] ${
+                      className={`relative h-10 w-auto whitespace-nowrap rounded-xl border-2 px-3 pr-8 text-xs font-extrabold uppercase tracking-widest inline-flex items-center justify-center text-center focus:outline-none shadow-[0_5px_0_rgba(6,58,40,0.18),0_11px_18px_-12px_rgba(2,54,35,0.8)] transition-all active:translate-y-[1px] active:shadow-[0_3px_0_rgba(6,58,40,0.2),0_7px_14px_-12px_rgba(2,54,35,0.7)] ${
                         darkMode
                           ? 'bg-slate-900 border-emerald-500/60 text-emerald-300'
                           : 'bg-white border-emerald-400 text-emerald-800'
                       }`}
                       title="Filter processed applicants by status"
                     >
-                      <span className="block w-full text-center">{processedApplicantStatusLabel}</span>
+                      <span>{processedApplicantStatusLabel}</span>
                       <span className="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center">
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -7267,7 +7336,7 @@ const Admin: React.FC = () => {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -4 }}
                           transition={{ duration: 0.14 }}
-                          className={`absolute top-[calc(100%+6px)] left-0 z-30 min-w-[155px] rounded-xl border overflow-hidden shadow-lg ${
+                          className={`absolute top-[calc(100%+6px)] left-0 z-30 w-max rounded-xl border overflow-hidden shadow-lg ${
                             darkMode ? 'bg-slate-900 border-emerald-500/30' : 'bg-white border-gray-200'
                           }`}
                         >
@@ -7279,7 +7348,7 @@ const Admin: React.FC = () => {
                                 setProcessedApplicantStatusFilter(option.value);
                                 setIsProcessedApplicantStatusMenuOpen(false);
                               }}
-                              className={`w-full text-center px-3 py-2 text-xs font-extrabold uppercase tracking-widest transition-colors ${
+                              className={`block w-full whitespace-nowrap text-center px-3 py-2 text-xs font-extrabold uppercase tracking-widest transition-colors ${
                                 processedApplicantStatusFilter === option.value
                                   ? darkMode
                                     ? 'bg-emerald-500/20 text-emerald-200'
@@ -7296,9 +7365,6 @@ const Admin: React.FC = () => {
                       ) : null}
                     </AnimatePresence>
                   </div>
-                </div>
-
-                <div className="flex items-center gap-2 lg:ml-auto">
                   <div className={`group flex items-center h-10 rounded-xl border overflow-hidden transition-all ${
                     darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'
                   }`}>
@@ -7333,7 +7399,10 @@ const Admin: React.FC = () => {
                       <th className={`py-4 text-center text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Project Applied For</th>
                       <th className={`py-4 text-center text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Date</th>
                       <th className={`py-4 text-center text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Status</th>
-                      <th className={`py-4 text-center pl-2 w-[180px] text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Action</th>
+                      <th className={`py-4 text-center w-[120px] text-[10px] font-bold uppercase tracking-widest ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>Action</th>
+                      <th className="py-4 text-center w-[70px]">
+                        <span className="sr-only">More actions</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -7358,7 +7427,7 @@ const Admin: React.FC = () => {
 
                               return (
                                 <span
-                                  className={`inline-flex text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-none ${
+                                  className={`inline-flex min-w-[78px] justify-center text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-none ${
                                     isHiredStatus
                                       ? darkMode
                                         ? 'bg-blue-500/20 text-blue-200'
@@ -7378,8 +7447,8 @@ const Admin: React.FC = () => {
                             })()}
                           </div>
                         </td>
-                        <td className="py-4 pl-2 text-center">
-                          <div className="relative inline-flex items-center justify-center gap-2" ref={openApplicantActionMenuId === app.id ? applicantActionMenuRef : null}>
+                        <td className="py-4 text-center">
+                          <div className="mx-auto inline-flex h-[32px] w-[74px] items-center justify-center whitespace-nowrap">
                             {(normalizeApplicationStatus(app.status) === 'accepted' || normalizeApplicationStatus(app.status) === 'hired') ? (
                               <button
                                 type="button"
@@ -7392,7 +7461,13 @@ const Admin: React.FC = () => {
                               >
                                 View
                               </button>
-                            ) : null}
+                            ) : (
+                              <span className="inline-flex h-full w-full" aria-hidden="true" />
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-4 text-center">
+                          <div className="relative inline-flex items-center justify-center" ref={openApplicantActionMenuId === app.id ? applicantActionMenuRef : null}>
                             <button
                               type="button"
                               onClick={(event) => {
@@ -7401,7 +7476,7 @@ const Admin: React.FC = () => {
                               }}
                               disabled={applicantRowActionId === app.id}
                               title="More actions"
-                              className={`w-7 h-7 rounded-full border inline-flex items-center justify-center transition-colors disabled:opacity-50 ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-gray-200 text-gray-500 hover:bg-gray-100'}`}
+                              className={`w-7 h-7 shrink-0 rounded-full border inline-flex items-center justify-center transition-colors disabled:opacity-50 ${darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-gray-200 text-gray-500 hover:bg-gray-100'}`}
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <circle cx="12" cy="8" r="1"/>
@@ -7410,7 +7485,7 @@ const Admin: React.FC = () => {
                               </svg>
                             </button>
                             {openApplicantActionMenuId === app.id && (
-                              <div className={`absolute left-full ml-2 top-1/2 -translate-y-1/2 w-32 rounded-xl border shadow-xl z-20 p-1 ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}>
+                              <div className={`absolute right-full mr-2 top-1/2 -translate-y-1/2 w-32 rounded-xl border shadow-xl z-20 p-1 ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}>
                                 <button
                                   type="button"
                                   onClick={(event) => {
@@ -7445,7 +7520,7 @@ const Admin: React.FC = () => {
                     ))}
                     {filteredProcessedApplicants.length === 0 && (
                       <tr>
-                        <td colSpan={6} className={`py-12 text-center italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>No processed applications yet</td>
+                        <td colSpan={7} className={`py-12 text-center italic ${darkMode ? 'text-slate-500' : 'text-gray-400'}`}>No processed applications yet</td>
                       </tr>
                     )}
                   </tbody>
@@ -7771,7 +7846,7 @@ const Admin: React.FC = () => {
                     {selectedApplicantStatus === 'pending' ? (
                       <div className="flex gap-4">
                         <button
-                          onClick={() => handleUpdateApplicationStatus(selectedApplicant, 'declined')}
+                          onClick={() => handleRequestDeclineApplicant(selectedApplicant)}
                           disabled={isUpdatingApplicantStatus}
                           title="Decline this applicant and send decline email"
                           className="flex-1 py-4 rounded-2xl bg-red-600 text-white font-extrabold text-base tracking-[0.08em] hover:bg-red-700 shadow-lg shadow-red-600/25 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
@@ -7779,7 +7854,7 @@ const Admin: React.FC = () => {
                           {isUpdatingApplicantStatus ? 'Processing...' : 'Decline'}
                         </button>
                         <button
-                          onClick={() => handleUpdateApplicationStatus(selectedApplicant, 'accepted')}
+                          onClick={() => handleRequestAcceptApplicant(selectedApplicant)}
                           disabled={isUpdatingApplicantStatus || !isApplicantInterviewSaved || !selectedApplicant.interview_at}
                           title={isApplicantInterviewSaved ? "Accept this applicant and send acceptance email" : "Save interview schedule first, then accept"}
                           className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-extrabold text-base tracking-[0.08em] hover:bg-emerald-700 shadow-xl shadow-emerald-700/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
@@ -7796,7 +7871,7 @@ const Admin: React.FC = () => {
                           Close
                         </button>
                         <button
-                          onClick={() => handleMarkApplicationAsHired(selectedApplicant)}
+                          onClick={() => handleRequestHireApplicant(selectedApplicant)}
                           disabled={applicantRowActionId === selectedApplicant.id}
                           title="Mark this accepted applicant as hired"
                           className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
@@ -7816,6 +7891,144 @@ const Admin: React.FC = () => {
                   </motion.div>
                 </div>
               )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {acceptApplicantConfirmTarget ? (
+                <div className="fixed inset-0 z-[96] flex items-center justify-center p-4">
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                    onClick={() => setAcceptApplicantConfirmTarget(null)}
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.96, y: 12 }}
+                    className={`relative w-full max-w-md rounded-3xl border p-6 shadow-2xl ${
+                      darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-900'
+                    }`}
+                  >
+                    <p className={`text-sm font-extrabold uppercase tracking-[0.14em] ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                      Confirm Action
+                    </p>
+                    <p className={`mt-3 text-base font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                      {`Are you sure to Accept ${acceptConfirmApplicantName}`}
+                    </p>
+                    <div className="mt-6 flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setAcceptApplicantConfirmTarget(null)}
+                        className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-colors"
+                      >
+                        No
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleConfirmAcceptApplicant}
+                        disabled={isUpdatingApplicantStatus}
+                        className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        Yes
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              ) : null}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {declineApplicantConfirmTarget ? (
+                <div className="fixed inset-0 z-[96] flex items-center justify-center p-4">
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                    onClick={() => setDeclineApplicantConfirmTarget(null)}
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.96, y: 12 }}
+                    className={`relative w-full max-w-md rounded-3xl border p-6 shadow-2xl ${
+                      darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-900'
+                    }`}
+                  >
+                    <p className={`text-sm font-extrabold uppercase tracking-[0.14em] ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                      Confirm Action
+                    </p>
+                    <p className={`mt-3 text-base font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                      {`Are you sure to Decline ${declineConfirmApplicantName}`}
+                    </p>
+                    <div className="mt-6 flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setDeclineApplicantConfirmTarget(null)}
+                        className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-colors"
+                      >
+                        No
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleConfirmDeclineApplicant}
+                        disabled={isUpdatingApplicantStatus}
+                        className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        Yes
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              ) : null}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {hireApplicantConfirmTarget ? (
+                <div className="fixed inset-0 z-[96] flex items-center justify-center p-4">
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                    onClick={() => setHireApplicantConfirmTarget(null)}
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.96, y: 12 }}
+                    className={`relative w-full max-w-md rounded-3xl border p-6 shadow-2xl ${
+                      darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-900'
+                    }`}
+                  >
+                    <p className={`text-sm font-extrabold uppercase tracking-[0.14em] ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                      Confirm Action
+                    </p>
+                    <p className={`mt-3 text-base font-semibold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>
+                      {`Are you sure to Hired ${hireConfirmApplicantName}.`}
+                    </p>
+                    <div className="mt-6 flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setHireApplicantConfirmTarget(null)}
+                        className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-colors"
+                      >
+                        No
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleConfirmHireApplicant}
+                        disabled={Boolean(hireApplicantConfirmTarget?.id && applicantRowActionId === hireApplicantConfirmTarget.id)}
+                        className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        Yes
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              ) : null}
             </AnimatePresence>
 
             <AnimatePresence>
