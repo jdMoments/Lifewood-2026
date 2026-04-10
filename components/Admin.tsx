@@ -410,6 +410,7 @@ const Admin: React.FC = () => {
   const [isLoadingProjectSubmissions, setIsLoadingProjectSubmissions] = useState(false);
   const [projectSubmissionNotice, setProjectSubmissionNotice] = useState('');
   const [selectedProjectSubmission, setSelectedProjectSubmission] = useState<ProjectSubmissionItem | null>(null);
+  const [projectDeleteConfirmTarget, setProjectDeleteConfirmTarget] = useState<ProjectSubmissionItem | null>(null);
   const [contactMessages, setContactMessages] = useState<ContactMessageItem[]>([]);
   const [inboxSourceDebug, setInboxSourceDebug] = useState<Array<{ table: string; rows: number; error: string }>>([]);
   const [selectedInboxMessageId, setSelectedInboxMessageId] = useState('');
@@ -4980,15 +4981,15 @@ const Admin: React.FC = () => {
     }
   };
 
-  const handleDeleteProjectSubmission = async () => {
-    if (!selectedProjectSubmission?.id) return;
-    if (!confirm('Are you sure you want to delete this project submission?')) return;
+  const handleDeleteProjectSubmission = async (submissionInput?: ProjectSubmissionItem | null) => {
+    const submissionToDelete = submissionInput || projectDeleteConfirmTarget || selectedProjectSubmission;
+    if (!submissionToDelete?.id) return;
 
     setIsProjectDecisionSaving(true);
     setProjectSubmissionNotice('');
 
     try {
-      const preferredTable = selectedProjectSubmission.source_table;
+      const preferredTable = submissionToDelete.source_table;
       const candidateTables = preferredTable
         ? [preferredTable, ...PROJECT_SUBMISSION_TABLE_CANDIDATES.filter((table) => table !== preferredTable)]
         : [...PROJECT_SUBMISSION_TABLE_CANDIDATES];
@@ -5000,7 +5001,7 @@ const Admin: React.FC = () => {
         const { error } = await supabase
           .from(submissionTable)
           .delete()
-          .eq('id', selectedProjectSubmission.id);
+          .eq('id', submissionToDelete.id);
 
         if (!error) {
           deletedTable = submissionTable;
@@ -5020,22 +5021,25 @@ const Admin: React.FC = () => {
       await recordProjectHistoryEntry({
         action: 'deleted',
         source_table: deletedTable,
-        reference_id: selectedProjectSubmission.id,
-        full_name: selectedProjectSubmission.full_name || null,
-        email: selectedProjectSubmission.email || null,
-        project_name: selectedProjectSubmission.project_name || null,
+        reference_id: submissionToDelete.id,
+        full_name: submissionToDelete.full_name || null,
+        email: submissionToDelete.email || null,
+        project_name: submissionToDelete.project_name || null,
         notes: 'Project submission deleted by admin.',
       });
 
       setProjectSubmissions((prev) =>
-        prev.filter((submission) => submission.id !== selectedProjectSubmission.id)
+        prev.filter((submission) => submission.id !== submissionToDelete.id)
       );
       setProjectSubmissionNotice(
         deletedTable === 'project_submission'
-          ? 'Project deleted successfully. (legacy table)'
-          : 'Project deleted successfully.'
+          ? 'Project deleted successfully. Added to Deleted History. (legacy table)'
+          : 'Project deleted successfully. Added to Deleted History.'
       );
-      setSelectedProjectSubmission(null);
+      setProjectDeleteConfirmTarget(null);
+      if (selectedProjectSubmission?.id === submissionToDelete.id) {
+        setSelectedProjectSubmission(null);
+      }
 
       if (activeTab === 'Settings' && settingsView === 'history') {
         fetchSettingsHistory();
@@ -7028,19 +7032,40 @@ const Admin: React.FC = () => {
                           <td className={`py-4 px-5 text-sm ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>{submission.email || 'N/A'}</td>
                           <td className={`py-4 px-5 text-sm ${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>{submission.project_name || 'N/A'}</td>
                           <td className="py-4 px-5">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedProjectSubmission(submission)}
-                              className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-colors ${
-                                (submission.status || 'pending').toString().toLowerCase() === 'accepted'
-                                  ? (darkMode ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-100 text-emerald-700')
-                                  : (submission.status || 'pending').toString().toLowerCase() === 'declined'
-                                  ? (darkMode ? 'bg-red-500/20 text-red-300' : 'bg-red-100 text-red-700')
-                                  : (darkMode ? 'bg-orange-500/20 text-orange-300' : 'bg-orange-100 text-orange-700')
-                              }`}
-                            >
-                              {(submission.status || 'pending').toString()}
-                            </button>
+                            <div className="flex w-full items-center justify-center gap-4">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedProjectSubmission(submission)}
+                                className={`min-w-[110px] text-center text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-colors ${
+                                  (submission.status || 'pending').toString().toLowerCase() === 'accepted'
+                                    ? (darkMode ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-100 text-emerald-700')
+                                    : (submission.status || 'pending').toString().toLowerCase() === 'declined'
+                                    ? (darkMode ? 'bg-red-500/20 text-red-300' : 'bg-red-100 text-red-700')
+                                    : (darkMode ? 'bg-orange-500/20 text-orange-300' : 'bg-orange-100 text-orange-700')
+                                }`}
+                              >
+                                {(submission.status || 'pending').toString()}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setProjectDeleteConfirmTarget(submission)}
+                                className={`w-9 h-9 rounded-lg border shrink-0 flex items-center justify-center transition-colors ${
+                                  darkMode
+                                    ? 'border-slate-600 text-red-300 hover:bg-red-500/10 hover:border-red-400'
+                                    : 'border-red-200 text-red-600 hover:bg-red-50'
+                                }`}
+                                title="Delete project submission"
+                                aria-label="Delete project submission"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M3 6h18" />
+                                  <path d="M8 6V4h8v2" />
+                                  <path d="M19 6v14H5V6" />
+                                  <path d="M10 11v6" />
+                                  <path d="M14 11v6" />
+                                </svg>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -9090,7 +9115,7 @@ const Admin: React.FC = () => {
 
                     <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'border-slate-700' : 'border-black/10'}`}>
                       <div className={`px-4 py-3 border-b ${darkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-gray-50 border-black/10'}`}>
-                        <h4 className={`text-sm font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Declined and Deleted Projects</h4>
+                        <h4 className={`text-sm font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Declined and Deleted Projects (Deleted History)</h4>
                       </div>
                       <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse min-w-[680px]">
@@ -10128,7 +10153,7 @@ const Admin: React.FC = () => {
               <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
                 <button
                   type="button"
-                  onClick={handleDeleteProjectSubmission}
+                  onClick={() => setProjectDeleteConfirmTarget(selectedProjectSubmission)}
                   disabled={isProjectDecisionSaving}
                   className="px-6 py-3 rounded-xl border border-red-500 text-red-500 text-sm font-bold hover:bg-red-500/10 disabled:opacity-60"
                 >
@@ -10154,6 +10179,41 @@ const Admin: React.FC = () => {
                 </div>
               </div>
             </motion.div>
+          </div>
+        )}
+
+        {projectDeleteConfirmTarget && (
+          <div className="fixed inset-0 z-[65] flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => !isProjectDecisionSaving && setProjectDeleteConfirmTarget(null)}
+            />
+            <div className={`relative w-full max-w-md rounded-2xl border p-6 shadow-2xl ${darkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-black/10'}`}>
+              <h4 className={`text-lg font-bold ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>Confirm Project Deletion</h4>
+              <p className={`mt-2 text-sm leading-relaxed ${darkMode ? 'text-slate-400' : 'text-gray-600'}`}>
+                Delete <span className="font-semibold">{projectDeleteConfirmTarget.project_name || 'this project submission'}</span>? This will move the record to Deleted History.
+              </p>
+              <div className="mt-6 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setProjectDeleteConfirmTarget(null)}
+                  disabled={isProjectDecisionSaving}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors disabled:opacity-60 ${
+                    darkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-800' : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteProjectSubmission(projectDeleteConfirmTarget)}
+                  disabled={isProjectDecisionSaving}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold bg-[#046241] text-white hover:bg-[#035235] disabled:opacity-60"
+                >
+                  {isProjectDecisionSaving ? 'Deleting...' : 'Delete Project'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
