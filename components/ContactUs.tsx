@@ -3,6 +3,158 @@ import { motion, useDragControls } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 
 const CONTACT_MESSAGE_TABLE = 'inbox_messages';
+const CONTACT_RATE_LIMIT_RPC = 'submit_contact_message';
+const CONTACT_DAILY_LIMIT = 3;
+const CONTACT_COOLDOWN_MS = 2 * 60 * 1000;
+const CONTACT_DEVICE_ID_STORAGE_KEY = 'lifewood_contact_device_id';
+const CONTACT_RATE_LIMIT_STORAGE_KEY = 'lifewood_contact_rate_limit_v1';
+
+type ContactStatus = { type: 'success' | 'error'; message: string };
+
+type StoredContactRateLimitState = {
+  dayKey: string;
+  successfulSends: number;
+  lastSentAt: string | null;
+};
+
+type ContactSubmitResponse = {
+  success?: boolean;
+  message?: string;
+  attempts_left?: number;
+  cooldown_seconds?: number;
+};
+
+const getUtcDayKey = (timestamp = Date.now()) => new Date(timestamp).toISOString().slice(0, 10);
+
+const createBrowserDeviceId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `contact-device-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const readStoredRateLimitState = (): StoredContactRateLimitState => {
+  const todayKey = getUtcDayKey();
+
+  if (typeof window === 'undefined') {
+    return {
+      dayKey: todayKey,
+      successfulSends: 0,
+      lastSentAt: null,
+    };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(CONTACT_RATE_LIMIT_STORAGE_KEY);
+    if (!raw) {
+      return {
+        dayKey: todayKey,
+        successfulSends: 0,
+        lastSentAt: null,
+      };
+    }
+
+    const parsed = JSON.parse(raw) as Partial<StoredContactRateLimitState> | null;
+    const storedDayKey = typeof parsed?.dayKey === 'string' ? parsed.dayKey : todayKey;
+    const storedSuccessfulSends = Number.isFinite(parsed?.successfulSends)
+      ? Math.max(0, Math.min(CONTACT_DAILY_LIMIT, Number(parsed?.successfulSends)))
+      : 0;
+    const storedLastSentAt = typeof parsed?.lastSentAt === 'string' ? parsed.lastSentAt : null;
+
+    if (storedDayKey !== todayKey) {
+      return {
+        dayKey: todayKey,
+        successfulSends: 0,
+        lastSentAt: storedLastSentAt,
+      };
+    }
+
+    return {
+      dayKey: storedDayKey,
+      successfulSends: storedSuccessfulSends,
+      lastSentAt: storedLastSentAt,
+    };
+  } catch {
+    return {
+      dayKey: todayKey,
+      successfulSends: 0,
+      lastSentAt: null,
+    };
+  }
+};
+
+const persistStoredRateLimitState = (state: StoredContactRateLimitState) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(CONTACT_RATE_LIMIT_STORAGE_KEY, JSON.stringify(state));
+};
+
+const getCurrentClientRateLimitState = () => {
+  const storedState = readStoredRateLimitState();
+  persistStoredRateLimitState(storedState);
+
+  const lastSentAtMs = storedState.lastSentAt ? Date.parse(storedState.lastSentAt) : Number.NaN;
+
+  return {
+    ...storedState,
+    lastSentAtMs: Number.isFinite(lastSentAtMs) ? lastSentAtMs : null,
+  };
+};
+
+const recordSuccessfulClientSend = (timestamp: number) => {
+  const currentState = readStoredRateLimitState();
+  const nextState: StoredContactRateLimitState = {
+    dayKey: getUtcDayKey(timestamp),
+    successfulSends: Math.min(CONTACT_DAILY_LIMIT, currentState.successfulSends + 1),
+    lastSentAt: new Date(timestamp).toISOString(),
+  };
+
+  persistStoredRateLimitState(nextState);
+
+  return {
+    ...nextState,
+    lastSentAtMs: timestamp,
+  };
+};
+
+const getOrCreateBrowserDeviceId = () => {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  const existingDeviceId = window.localStorage.getItem(CONTACT_DEVICE_ID_STORAGE_KEY);
+  if (existingDeviceId) {
+    return existingDeviceId;
+  }
+
+  const nextDeviceId = createBrowserDeviceId();
+  window.localStorage.setItem(CONTACT_DEVICE_ID_STORAGE_KEY, nextDeviceId);
+  return nextDeviceId;
+};
+
+const isMissingSubmitContactRpcError = (error: any) => {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return message.includes(CONTACT_RATE_LIMIT_RPC) && (message.includes('function') || message.includes('schema cache'));
+};
+
+const formatCooldownLabel = (remainingMs: number) => {
+  const totalSeconds = Math.max(1, Math.ceil(remainingMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes > 0 && seconds > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m`;
+  }
+
+  return `${seconds}s`;
+};
 
 const ContactUs: React.FC = () => {
   const sectionRef = React.useRef<HTMLDivElement>(null);
@@ -11,7 +163,11 @@ const ContactUs: React.FC = () => {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [status, setStatus] = useState<ContactStatus | null>(null);
+  const [deviceId, setDeviceId] = useState('');
+  const [successfulSendsToday, setSuccessfulSendsToday] = useState(0);
+  const [lastSentAtMs, setLastSentAtMs] = useState<number | null>(null);
+  const [cooldownRemainingMs, setCooldownRemainingMs] = useState(0);
   const reachRows = [
     { label: 'Email', value: 'lifewood@gmail.com' },
     { label: 'Contact No.', value: '09515856382' },
@@ -24,28 +180,137 @@ const ContactUs: React.FC = () => {
     },
   ];
 
+  React.useEffect(() => {
+    const syncClientLimitState = () => {
+      setDeviceId(getOrCreateBrowserDeviceId());
+
+      const currentState = getCurrentClientRateLimitState();
+      setSuccessfulSendsToday(currentState.successfulSends);
+      setLastSentAtMs(currentState.lastSentAtMs);
+    };
+
+    syncClientLimitState();
+    window.addEventListener('focus', syncClientLimitState);
+
+    const syncInterval = window.setInterval(syncClientLimitState, 30000);
+
+    return () => {
+      window.removeEventListener('focus', syncClientLimitState);
+      window.clearInterval(syncInterval);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!lastSentAtMs) {
+      setCooldownRemainingMs(0);
+      return;
+    }
+
+    const updateCooldown = () => {
+      const nextRemainingMs = Math.max(0, CONTACT_COOLDOWN_MS - (Date.now() - lastSentAtMs));
+      setCooldownRemainingMs(nextRemainingMs);
+    };
+
+    updateCooldown();
+
+    if (Date.now() - lastSentAtMs >= CONTACT_COOLDOWN_MS) {
+      return;
+    }
+
+    const cooldownInterval = window.setInterval(updateCooldown, 1000);
+    return () => window.clearInterval(cooldownInterval);
+  }, [lastSentAtMs]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setStatus(null);
 
     try {
       const normalizedName = name.trim();
       const normalizedEmail = email.trim().toLowerCase();
       const normalizedMessage = message.trim();
+      const activeDeviceId = deviceId || getOrCreateBrowserDeviceId();
+      const clientLimitState = getCurrentClientRateLimitState();
+      const remainingCooldownMs = clientLimitState.lastSentAtMs
+        ? Math.max(0, CONTACT_COOLDOWN_MS - (Date.now() - clientLimitState.lastSentAtMs))
+        : 0;
+
+      setSuccessfulSendsToday(clientLimitState.successfulSends);
+      setLastSentAtMs(clientLimitState.lastSentAtMs);
+      setDeviceId(activeDeviceId);
+      setStatus(null);
+
+      if (!normalizedName || !normalizedEmail || !normalizedMessage) {
+        setStatus({ type: 'error', message: 'Please complete your name, email, and message before sending.' });
+        return;
+      }
+
+      if (remainingCooldownMs > 0) {
+        setStatus({
+          type: 'error',
+          message: `This device is on cooldown. Please wait ${formatCooldownLabel(remainingCooldownMs)} before sending another message.`,
+        });
+        return;
+      }
+
+      if (clientLimitState.successfulSends >= CONTACT_DAILY_LIMIT) {
+        setStatus({
+          type: 'error',
+          message: 'This device has already sent 3 messages today. Please try again tomorrow.',
+        });
+        return;
+      }
+
+      setLoading(true);
+
       const payload = {
         name: normalizedName,
         email: normalizedEmail,
         message: normalizedMessage,
       };
 
-      const { error } = await supabase
-        .from(CONTACT_MESSAGE_TABLE)
-        .insert([payload]);
+      const { data: rpcData, error: rpcError } = await supabase.rpc(CONTACT_RATE_LIMIT_RPC, {
+        contact_device_id: activeDeviceId,
+        contact_email: normalizedEmail,
+        contact_message: normalizedMessage,
+        contact_name: normalizedName,
+      });
 
-      if (error) {
-        throw error;
+      if (rpcError && !isMissingSubmitContactRpcError(rpcError)) {
+        throw rpcError;
       }
+
+      if (rpcError && isMissingSubmitContactRpcError(rpcError)) {
+        const { error: insertError } = await supabase
+          .from(CONTACT_MESSAGE_TABLE)
+          .insert([payload]);
+
+        if (insertError) {
+          throw insertError;
+        }
+      } else {
+        const submitResult = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as ContactSubmitResponse | null;
+
+        if (submitResult?.success === false) {
+          if (typeof submitResult.attempts_left === 'number') {
+            setSuccessfulSendsToday(Math.max(0, CONTACT_DAILY_LIMIT - submitResult.attempts_left));
+          }
+
+          if (typeof submitResult.cooldown_seconds === 'number' && submitResult.cooldown_seconds > 0) {
+            const reconstructedLastSentAtMs = Date.now() - Math.max(0, CONTACT_COOLDOWN_MS - (submitResult.cooldown_seconds * 1000));
+            setLastSentAtMs(reconstructedLastSentAtMs);
+          }
+
+          setStatus({
+            type: 'error',
+            message: submitResult.message || 'Unable to send your message right now.',
+          });
+          return;
+        }
+      }
+
+      const updatedClientState = recordSuccessfulClientSend(Date.now());
+      setSuccessfulSendsToday(updatedClientState.successfulSends);
+      setLastSentAtMs(updatedClientState.lastSentAtMs);
 
       setStatus({ type: 'success', message: 'Message sent successfully!' });
       setName('');
@@ -58,6 +323,16 @@ const ContactUs: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const attemptsLeft = Math.max(0, CONTACT_DAILY_LIMIT - successfulSendsToday);
+  const isTemporarilyBlocked = cooldownRemainingMs > 0;
+  const isDailyLimitReached = attemptsLeft === 0;
+  const isSubmitDisabled = loading || isTemporarilyBlocked || isDailyLimitReached;
+  const deviceLimitMessage = isTemporarilyBlocked
+    ? `This device can send another message in ${formatCooldownLabel(cooldownRemainingMs)}.`
+    : isDailyLimitReached
+      ? 'This device already used all 3 contact attempts for today.'
+      : `${attemptsLeft} of ${CONTACT_DAILY_LIMIT} contact attempts remaining for this device today.`;
 
   return (
     <div 
@@ -219,11 +494,14 @@ const ContactUs: React.FC = () => {
                 <div className="pt-4">
                   <button 
                     type="submit"
-                    disabled={loading}
+                    disabled={isSubmitDisabled}
                     className="w-full py-5 bg-[#14261F] text-white rounded-full font-bold text-lg hover:bg-[#0D1A15] transition-all shadow-2xl border border-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? 'Sending...' : 'Send Message'}
                   </button>
+                  <p className="mt-4 px-2 text-sm text-white/70">
+                    {deviceLimitMessage}
+                  </p>
                 </div>
               </form>
 

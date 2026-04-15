@@ -445,6 +445,7 @@ create table if not exists public.inbox_messages (
   name text,
   email text,
   message text,
+  device_id text,
   source_table text default 'contact_us',
   source_id text
 );
@@ -453,11 +454,14 @@ alter table public.inbox_messages add column if not exists created_at timestampt
 alter table public.inbox_messages add column if not exists name text;
 alter table public.inbox_messages add column if not exists email text;
 alter table public.inbox_messages add column if not exists message text;
+alter table public.inbox_messages add column if not exists device_id text;
 alter table public.inbox_messages add column if not exists source_table text default 'contact_us';
 alter table public.inbox_messages add column if not exists source_id text;
 alter table public.inbox_messages enable row level security;
 
 create unique index if not exists inbox_messages_source_key on public.inbox_messages (source_table, source_id);
+create index if not exists inbox_messages_device_created_idx on public.inbox_messages (device_id, created_at desc)
+where source_table = 'contact_us' and device_id is not null;
 
 do $$
 begin
@@ -471,10 +475,111 @@ begin
   end if;
 end $$;
 
+create or replace function public.submit_contact_message(
+  contact_name text,
+  contact_email text,
+  contact_message text,
+  contact_device_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  normalized_name text := btrim(coalesce(contact_name, ''));
+  normalized_email text := lower(btrim(coalesce(contact_email, '')));
+  normalized_message text := btrim(coalesce(contact_message, ''));
+  normalized_device_id text := btrim(coalesce(contact_device_id, ''));
+  utc_day_start timestamptz := date_trunc('day', now() at time zone 'utc') at time zone 'utc';
+  utc_day_end timestamptz := (date_trunc('day', now() at time zone 'utc') + interval '1 day') at time zone 'utc';
+  sent_today integer := 0;
+  latest_sent_at timestamptz;
+  cooldown_remaining_seconds integer := 0;
+begin
+  if normalized_name = '' or normalized_email = '' or normalized_message = '' then
+    return jsonb_build_object(
+      'success', false,
+      'message', 'Please complete your name, email, and message before sending.'
+    );
+  end if;
+
+  if normalized_device_id = '' then
+    return jsonb_build_object(
+      'success', false,
+      'message', 'Unable to verify this device. Please refresh and try again.'
+    );
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext(normalized_device_id));
+
+  select count(*)
+  into sent_today
+  from public.inbox_messages
+  where source_table = 'contact_us'
+    and device_id = normalized_device_id
+    and created_at >= utc_day_start
+    and created_at < utc_day_end;
+
+  if sent_today >= 3 then
+    return jsonb_build_object(
+      'success', false,
+      'message', 'This device has already sent 3 messages today. Please try again tomorrow.',
+      'attempts_left', 0,
+      'cooldown_seconds', 0
+    );
+  end if;
+
+  select max(created_at)
+  into latest_sent_at
+  from public.inbox_messages
+  where source_table = 'contact_us'
+    and device_id = normalized_device_id;
+
+  if latest_sent_at is not null and latest_sent_at > now() - interval '2 minutes' then
+    cooldown_remaining_seconds := greatest(
+      1,
+      ceil(extract(epoch from ((latest_sent_at + interval '2 minutes') - now())))::integer
+    );
+
+    return jsonb_build_object(
+      'success', false,
+      'message', format(
+        'This device is on cooldown. Please wait %s seconds before sending another message.',
+        cooldown_remaining_seconds
+      ),
+      'attempts_left', greatest(0, 3 - sent_today),
+      'cooldown_seconds', cooldown_remaining_seconds
+    );
+  end if;
+
+  insert into public.inbox_messages (
+    name,
+    email,
+    message,
+    device_id,
+    source_table,
+    source_id
+  )
+  values (
+    normalized_name,
+    normalized_email,
+    normalized_message,
+    normalized_device_id,
+    'contact_us',
+    gen_random_uuid()::text
+  );
+
+  return jsonb_build_object(
+    'success', true,
+    'message', 'Message sent successfully!',
+    'attempts_left', greatest(0, 2 - sent_today),
+    'cooldown_seconds', 120
+  );
+end;
+$$;
+
 drop policy if exists "Public can submit inbox messages" on public.inbox_messages;
-create policy "Public can submit inbox messages" on public.inbox_messages
-for insert
-with check (true);
 
 drop policy if exists "Authenticated can view inbox messages" on public.inbox_messages;
 create policy "Authenticated can view inbox messages" on public.inbox_messages
@@ -492,8 +597,9 @@ create policy "Admins can delete inbox messages" on public.inbox_messages
 for delete
 using (public.is_admin_request());
 
-grant insert on table public.inbox_messages to anon, authenticated;
+revoke insert on table public.inbox_messages from anon, authenticated;
 grant select, update, delete on table public.inbox_messages to authenticated;
+grant execute on function public.submit_contact_message(text, text, text, text) to anon, authenticated;
 
 -- Legacy contact table migration and cleanup
 do $$
